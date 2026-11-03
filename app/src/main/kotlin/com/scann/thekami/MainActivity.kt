@@ -97,6 +97,7 @@ fun ScannApp(
     val context = LocalContext.current
     val view = LocalView.current
     var selectedTab by remember { mutableStateOf(initialTab ?: NavTab.SCAN) }
+    var visitedTabs by remember { mutableStateOf(setOf(initialTab ?: NavTab.SCAN)) }
     var overlay by remember { mutableStateOf<Overlay>(Overlay.None) }
     var lastResult by remember { mutableStateOf<ScanResult?>(null) }
     var backProgress by remember { mutableFloatStateOf(0f) }
@@ -107,6 +108,7 @@ fun ScannApp(
     val navStyle = if (settings.floatingNav) NavBarStyle.FLOATING else NavBarStyle.DOCKED
     val isDark = isSystemInDarkTheme()
     val onCamera = selectedTab == NavTab.SCAN && overlay is Overlay.None
+    LaunchedEffect(selectedTab) { visitedTabs = visitedTabs + selectedTab }
 
     LaunchedEffect(initialTab) {
         if (initialTab != null) {
@@ -162,7 +164,7 @@ fun ScannApp(
             Surface(modifier = Modifier.fillMaxSize()) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     // Keep CameraX bound while navigating so returning to Scan is instant.
-                    TabLayer(visible = selectedTab == NavTab.SCAN) {
+                    TabLayer(visible = selectedTab == NavTab.SCAN, composed = selectedTab == NavTab.SCAN || NavTab.SCAN in visitedTabs) {
                         ScannerScreen(
                             isActive = selectedTab == NavTab.SCAN && overlay is Overlay.None,
                             modifier = Modifier.fillMaxSize(),
@@ -171,10 +173,10 @@ fun ScannApp(
                             }
                         )
                     }
-                    TabLayer(visible = selectedTab == NavTab.CREATE) {
+                    TabLayer(visible = selectedTab == NavTab.CREATE, composed = selectedTab == NavTab.CREATE || NavTab.CREATE in visitedTabs) {
                         GeneratorScreen()
                     }
-                    TabLayer(visible = selectedTab == NavTab.SETTINGS) {
+                    TabLayer(visible = selectedTab == NavTab.SETTINGS, composed = selectedTab == NavTab.SETTINGS || NavTab.SETTINGS in visitedTabs) {
                         SettingsScreen(
                             onAboutClick = { overlay = Overlay.About },
                             settings = settings,
@@ -274,6 +276,7 @@ private fun OverlayLayer(
 @Composable
 private fun TabLayer(
     visible: Boolean,
+    composed: Boolean,
     content: @Composable () -> Unit
 ) {
     val animations = LocalAnimationsEnabled.current
@@ -294,6 +297,6 @@ private fun TabLayer(
             .graphicsLayer { this.alpha = alpha.value }
             .then(if (visible) Modifier else Modifier.clearAndSetSemantics { })
     ) {
-        content()
+        if (composed) content()
     }
 }
