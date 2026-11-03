@@ -8,28 +8,17 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Animation
-import androidx.compose.material.icons.filled.Apps
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.PrivacyTip
-import androidx.compose.material.icons.filled.StarRate
-import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
@@ -49,10 +38,8 @@ import com.scann.thekami.util.AppSettings
 import com.scann.thekami.util.Haptics
 import com.scann.thekami.util.NotificationController
 
-private val CardRowPadding = 16.dp
-private val CardRadius = 16.dp
-private val IconTileRadius = 10.dp
-private val IconTileSize = 38.dp
+private val ScreenPadding = 20.dp
+private val RowVerticalPadding = 14.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -133,85 +120,66 @@ fun SettingsScreen(
                 .padding(padding)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
                 .padding(bottom = bottomNavClearance())
         ) {
-            Spacer(modifier = Modifier.height(4.dp))
-
             SectionLabel("Quick access")
-            SettingsCard {
-                SwitchRow(
-                    icon = Icons.Filled.NotificationsActive,
-                    title = "Create QR shortcut",
-                    subtitle = "Adds a quick shortcut to create a QR code from your notifications",
-                    checked = createNotificationEnabled,
-                    onCheckedChange = ::onNotificationToggle
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
+            SwitchRow(
+                iconRes = R.drawable.hgi_notification,
+                title = "Create QR shortcut",
+                subtitle = "Adds a quick shortcut to create a QR code from your notifications",
+                checked = createNotificationEnabled,
+                onCheckedChange = ::onNotificationToggle
+            )
 
             SectionLabel("Appearance")
-            SettingsCard {
-                if (AppPreferences.dynamicColorSupported) {
-                    SwitchRow(
-                        icon = Icons.Filled.Palette,
-                        title = "Dynamic colors",
-                        subtitle = "Match the app to your wallpaper colors",
-                        checked = settings.dynamicColor,
-                        onCheckedChange = { onSettingsChange(settings.copy(dynamicColor = it)) }
-                    )
-                    SettingsDivider()
-                }
+            if (AppPreferences.dynamicColorSupported) {
                 SwitchRow(
-                    icon = Icons.Filled.ViewAgenda,
-                    title = "Floating navigation bar",
-                    subtitle = "Show a compact floating bar instead of docking it to the bottom",
-                    checked = settings.floatingNav,
-                    onCheckedChange = { onSettingsChange(settings.copy(floatingNav = it)) }
-                )
-                SettingsDivider()
-                SwitchRow(
-                    icon = Icons.Filled.Animation,
-                    title = "Animations",
-                    subtitle = "Tab transitions and scan animations",
-                    checked = settings.animations,
-                    onCheckedChange = { onSettingsChange(settings.copy(animations = it)) }
+                    iconRes = R.drawable.hgi_palette,
+                    title = "Dynamic colors",
+                    subtitle = "Match the app to your wallpaper colors",
+                    checked = settings.dynamicColor,
+                    onCheckedChange = { onSettingsChange(settings.copy(dynamicColor = it)) }
                 )
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
+            SwitchRow(
+                iconRes = R.drawable.hgi_nav_bar,
+                title = "Floating navigation bar",
+                subtitle = "Show a compact floating bar instead of docking it to the bottom",
+                checked = settings.floatingNav,
+                onCheckedChange = { onSettingsChange(settings.copy(floatingNav = it)) }
+            )
+            SwitchRow(
+                iconRes = R.drawable.hgi_animation,
+                title = "Animations",
+                subtitle = "Tab transitions and scan animations",
+                checked = settings.animations,
+                onCheckedChange = { onSettingsChange(settings.copy(animations = it)) }
+            )
 
             SectionLabel("About")
-            SettingsCard {
-                SettingsRow(
-                    icon = Icons.Filled.Info,
-                    title = "About Scann",
-                    subtitle = "Version ${BuildConfig.VERSION_NAME}",
-                    onClick = onAboutClick
-                )
-                SettingsDivider()
-                SettingsRow(
-                    icon = Icons.Filled.StarRate,
-                    title = "Rate Scann",
-                    subtitle = "Enjoying the app? Leave us a rating",
-                    onClick = ::launchInAppReview
-                )
-                SettingsDivider()
-                SettingsRow(
-                    icon = Icons.Filled.PrivacyTip,
-                    title = "Privacy Policy",
-                    subtitle = "How we handle your data",
-                    onClick = { openUrl("https://blog.thekami.tech/posts/scann/") }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
+            SettingsRow(
+                iconRes = R.drawable.hgi_info,
+                title = "About Scann",
+                subtitle = "Version ${BuildConfig.VERSION_NAME}",
+                onClick = onAboutClick
+            )
+            SettingsRow(
+                iconRes = R.drawable.hgi_star,
+                title = "Rate Scann",
+                subtitle = "Enjoying the app? Leave us a rating",
+                onClick = ::launchInAppReview
+            )
+            SettingsRow(
+                iconRes = R.drawable.hgi_privacy,
+                title = "Privacy Policy",
+                subtitle = "How we handle your data",
+                onClick = { openUrl("https://blog.thekami.tech/posts/scann/") }
+            )
 
             SectionLabel("Follow us")
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)
+                modifier = Modifier.padding(horizontal = ScreenPadding),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 SocialIconButton(R.drawable.ic_linkedin, "LinkedIn") {
                     openUrl("https://www.linkedin.com/company/thekamiofficial")
@@ -224,28 +192,22 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
             SectionLabel("More from TheKami")
-            SettingsCard {
-                SettingsRow(
-                    icon = Icons.Filled.Apps,
-                    title = "More apps by TheKami",
-                    subtitle = "Explore our other apps on Play Store",
-                    onClick = {
-                        openUrl("https://play.google.com/store/apps/dev?id=8580703469843686933")
-                    }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
+            SettingsRow(
+                iconRes = R.drawable.hgi_apps,
+                title = "More apps by TheKami",
+                subtitle = "Explore our other apps on Play Store",
+                onClick = {
+                    openUrl("https://play.google.com/store/apps/dev?id=8580703469843686933")
+                }
+            )
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 24.dp)
+                    .padding(top = 32.dp, bottom = 24.dp)
                     .clickable(role = Role.Button) { openUrl("https://www.thekami.tech") }
             ) {
                 Text(
@@ -273,46 +235,35 @@ private fun SectionLabel(text: String) {
             fontWeight = FontWeight.Bold
         ),
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+        modifier = Modifier.padding(start = ScreenPadding, end = ScreenPadding, top = 24.dp, bottom = 6.dp)
     )
 }
 
 @Composable
-private fun settingsSurfaceColor() =
-    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-
-@Composable
-private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(CardRadius),
-        color = settingsSurfaceColor(),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(content = content)
-    }
+private fun RowIcon(@DrawableRes iconRes: Int) {
+    Icon(
+        painter = painterResource(id = iconRes),
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.size(24.dp)
+    )
 }
 
 @Composable
-private fun IconTile(icon: ImageVector) {
-    Surface(
-        shape = RoundedCornerShape(IconTileRadius),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        modifier = Modifier.size(IconTileSize)
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(20.dp)
-            )
-        }
+private fun RowText(title: String, subtitle: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
+        Text(text = title, style = MaterialTheme.typography.bodyLarge)
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
 @Composable
 private fun SettingsRow(
-    icon: ImageVector,
+    @DrawableRes iconRes: Int,
     title: String,
     subtitle: String,
     onClick: () -> Unit
@@ -321,21 +272,14 @@ private fun SettingsRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(CardRowPadding),
+            .padding(horizontal = ScreenPadding, vertical = RowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconTile(icon)
-        Spacer(modifier = Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        RowIcon(iconRes)
+        Spacer(modifier = Modifier.width(20.dp))
+        RowText(title, subtitle, Modifier.weight(1f))
         Icon(
-            imageVector = Icons.Filled.ChevronRight,
+            painter = painterResource(id = R.drawable.hgi_chevron_right),
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(20.dp)
@@ -344,16 +288,8 @@ private fun SettingsRow(
 }
 
 @Composable
-private fun SettingsDivider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(horizontal = CardRowPadding),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-    )
-}
-
-@Composable
 private fun SwitchRow(
-    icon: ImageVector,
+    @DrawableRes iconRes: Int,
     title: String,
     subtitle: String,
     checked: Boolean,
@@ -372,20 +308,13 @@ private fun SwitchRow(
                     onCheckedChange(it)
                 }
             )
-            .padding(CardRowPadding),
+            .padding(horizontal = ScreenPadding, vertical = RowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconTile(icon)
-        Spacer(modifier = Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Spacer(modifier = Modifier.width(8.dp))
+        RowIcon(iconRes)
+        Spacer(modifier = Modifier.width(20.dp))
+        RowText(title, subtitle, Modifier.weight(1f))
+        Spacer(modifier = Modifier.width(12.dp))
         Switch(checked = checked, onCheckedChange = null)
     }
 }
@@ -395,7 +324,7 @@ private fun SocialIconButton(iconRes: Int, label: String, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         shape = CircleShape,
-        color = settingsSurfaceColor(),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
         modifier = Modifier.size(52.dp)
     ) {
         Box(contentAlignment = Alignment.Center) {

@@ -1,46 +1,51 @@
 package com.scann.thekami.ui.components
 
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.QrCode2
-import androidx.compose.material.icons.filled.QrCodeScanner
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.scann.thekami.R
 
-enum class NavTab(val label: String, val icon: ImageVector) {
-    SCAN("Scan", Icons.Filled.QrCodeScanner),
-    CREATE("Create", Icons.Filled.QrCode2),
-    SETTINGS("Settings", Icons.Filled.Settings)
+enum class NavTab(val label: String, @DrawableRes val iconRes: Int) {
+    SCAN("Scan", R.drawable.hgi_scan),
+    CREATE("Create", R.drawable.hgi_qr_create),
+    SETTINGS("Settings", R.drawable.hgi_settings)
 }
 
 /**
@@ -65,6 +70,39 @@ fun bottomNavClearance(): Dp = bottomNavHeight() + 16.dp
 private val PillHeight = 64.dp
 private val PillPadding = 6.dp
 private val PillItemHeight = PillHeight - PillPadding * 2
+private val DockedHeight = 80.dp
+
+private fun <T> navSpec(animations: Boolean): FiniteAnimationSpec<T> =
+    if (animations) {
+        spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+    } else {
+        snap()
+    }
+
+/** Tab click without a ripple: the item gives a small press-scale instead. */
+@Composable
+private fun Modifier.tabClickable(selected: Boolean, onClick: () -> Unit): Modifier {
+    val animations = LocalAnimationsEnabled.current
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && animations) 0.92f else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "tabPressScale"
+    )
+    return this
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+        .selectable(
+            selected = selected,
+            interactionSource = source,
+            indication = null,
+            role = Role.Tab,
+            onClick = onClick
+        )
+}
 
 @Composable
 fun BottomNavBar(
@@ -85,21 +123,79 @@ private fun DockedNavBar(
     onTabSelected: (NavTab) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier) {
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-        NavigationBar(
-            containerColor = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp
-        ) {
-            NavTab.entries.forEach { tab ->
-                NavigationBarItem(
-                    selected = tab == selectedTab,
-                    onClick = { onTabSelected(tab) },
-                    icon = { Icon(imageVector = tab.icon, contentDescription = null) },
-                    label = { Text(tab.label) }
-                )
+    Surface(color = MaterialTheme.colorScheme.surface, modifier = modifier) {
+        Column {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .height(DockedHeight)
+            ) {
+                NavTab.entries.forEach { tab ->
+                    DockedNavItem(
+                        tab = tab,
+                        selected = tab == selectedTab,
+                        onClick = { onTabSelected(tab) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun DockedNavItem(
+    tab: NavTab,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val animations = LocalAnimationsEnabled.current
+    val colors = MaterialTheme.colorScheme
+    val progress by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = navSpec(animations),
+        label = "dockedItemProgress"
+    )
+    val iconColor = lerp(colors.onSurfaceVariant, colors.onPrimaryContainer, progress)
+    val labelColor = lerp(colors.onSurfaceVariant, colors.onSurface, progress)
+
+    Column(
+        modifier = modifier
+            .fillMaxHeight()
+            .tabClickable(selected, onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier.size(width = 64.dp, height = 32.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer {
+                        scaleX = progress
+                        alpha = progress
+                    }
+                    .background(colors.primaryContainer, CircleShape)
+            )
+            Icon(
+                painter = painterResource(tab.iconRes),
+                contentDescription = null,
+                tint = iconColor,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = tab.label,
+            color = labelColor,
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1
+        )
     }
 }
 
@@ -144,7 +240,7 @@ private fun FloatingNavItem(
     onClick: () -> Unit
 ) {
     val animations = LocalAnimationsEnabled.current
-    val colorSpec = tween<Color>(durationMillis = if (animations) 250 else 0)
+    val colorSpec = navSpec<Color>(animations)
 
     val backgroundColor by animateColorAsState(
         targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
@@ -164,28 +260,30 @@ private fun FloatingNavItem(
     Row(
         modifier = Modifier
             .height(PillItemHeight)
+            .tabClickable(selected, onClick)
             .clip(CircleShape)
             .background(backgroundColor)
-            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .animateContentSize(animationSpec = navSpec(animations))
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = tab.icon,
+            painter = painterResource(tab.iconRes),
             contentDescription = if (selected) null else tab.label,
             tint = contentColor,
             modifier = Modifier.size(24.dp)
         )
         AnimatedVisibility(
             visible = selected,
-            enter = if (animations) fadeIn() + expandHorizontally() else EnterTransition.None,
-            exit = if (animations) fadeOut() + shrinkHorizontally() else ExitTransition.None
+            enter = if (animations) fadeIn(tween(200, delayMillis = 60)) else EnterTransition.None,
+            exit = if (animations) fadeOut(tween(80)) else ExitTransition.None
         ) {
             Text(
                 text = tab.label,
                 color = contentColor,
                 style = MaterialTheme.typography.labelLarge,
                 maxLines = 1,
+                softWrap = false,
                 modifier = Modifier.padding(start = 8.dp)
             )
         }
