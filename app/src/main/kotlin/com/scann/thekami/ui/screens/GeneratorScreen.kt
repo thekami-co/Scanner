@@ -21,6 +21,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.scann.thekami.model.QrContentEncoder
 import com.scann.thekami.model.QrContentType
 import com.scann.thekami.ui.components.bottomNavClearance
@@ -35,6 +38,8 @@ fun GeneratorScreen() {
     val focusManager = LocalFocusManager.current
     var selectedType by remember { mutableStateOf(QrContentType.TEXT) }
     var generatedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var isGenerating by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     // Form fields
     var textValue by remember { mutableStateOf("") }
@@ -77,7 +82,12 @@ fun GeneratorScreen() {
     fun generateQr() {
         focusManager.clearFocus()
         val content = buildEncodedContent()
-        generatedBitmap = if (content.isNotBlank()) QrCodeGenerator.generate(content) else null
+        if (content.isBlank() || isGenerating) return
+        isGenerating = true
+        scope.launch {
+            generatedBitmap = withContext(Dispatchers.Default) { QrCodeGenerator.generate(content) }
+            isGenerating = false
+        }
     }
 
     val currentBitmap = generatedBitmap
@@ -105,7 +115,7 @@ fun GeneratorScreen() {
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(QrContentType.values().toList()) { type ->
+                items(QrContentType.entries) { type ->
                     FilterChip(
                         selected = selectedType == type,
                         onClick = { selectedType = type },
@@ -266,7 +276,7 @@ fun GeneratorScreen() {
                 Button(
                     onClick = ::generateQr,
                     shape = RoundedCornerShape(FieldRadius),
-                    enabled = buildEncodedContent().isNotBlank(),
+                    enabled = !isGenerating && buildEncodedContent().isNotBlank(),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp)
