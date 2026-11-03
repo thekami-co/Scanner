@@ -82,6 +82,7 @@ jobs:
             exit 1
           fi
 
+          echo "code=$VC" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "apk_name=Scann-${TAG}.apk" >> "$GITHUB_OUTPUT"
           echo "aab_name=Scann-${TAG}.aab" >> "$GITHUB_OUTPUT"
@@ -113,12 +114,15 @@ jobs:
           } > key.properties
 
       - name: Build signed release APK and AAB
-        run: ./gradlew --no-daemon assembleRelease bundleRelease
+        env:
+          VERSION_CODE: ${{ steps.ver.outputs.code }}
+        run: ./gradlew --no-daemon assembleRelease bundleRelease "-PreleaseVersionCode=${VERSION_CODE}"
 
       - name: Verify and rename APK and AAB
         env:
           APK_NAME: ${{ steps.ver.outputs.apk_name }}
           AAB_NAME: ${{ steps.ver.outputs.aab_name }}
+          VERSION_CODE: ${{ steps.ver.outputs.code }}
         shell: bash
         run: |
           set -euo pipefail
@@ -159,6 +163,11 @@ jobs:
 
           # Verify APK signature.
           "$BUILD_TOOLS/apksigner" verify --verbose "$APK"
+          BADGING=$("$BUILD_TOOLS/aapt2" dump badging "$APK")
+          grep -q "versionCode='${VERSION_CODE}'" <<< "$BADGING" || {
+              echo "::error::Built APK versionCode does not match release tag."
+              exit 1
+            }
 
           # Verify that the AAB is signed.
           jarsigner -verify "$AAB"
@@ -169,6 +178,15 @@ jobs:
 
           echo "Verified artifacts:"
           ls -lh "$APK_NAME" "$AAB_NAME"
+
+      - name: Upload AAB to Google Play (Production)
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
+          packageName: com.scann.thekami
+          releaseFiles: ${{ steps.ver.outputs.aab_name }}
+          track: production
+          status: completed
 
       - name: Create GitHub Release (APK + AAB)
         env:
@@ -186,18 +204,6 @@ jobs:
             --title "$RELEASE_TITLE $TAG" \
             --generate-notes \
             --latest
-
-      # Google Play automatic upload is intentionally disabled for now.
-      # To enable it later, uncomment this entire step.
-      #
-      # - name: Upload AAB to Google Play (Production)
-      #   uses: r0adkll/upload-google-play@v1
-      #   with:
-      #     serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
-      #     packageName: com.scann.thekami
-      #     releaseFiles: app/build/outputs/bundle/release/*.aab
-      #     track: production
-      #     status: completed
 
       - name: Clean up signing files
         if: always()

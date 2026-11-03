@@ -72,7 +72,7 @@ You can also create your own QR codes, scan from a gallery image, and start scan
 | `main` | Builds a signed release APK and publishes it as a GitHub Release (`v1.0.<n>`). |
 | `store` | Publishes a GitHub Release (`store-v1.0.<n>`) and sends the build to Google Play Production. |
 
-The version code is the git commit count, so history is never rewritten on release branches.
+The version code normally follows the git commit count. If a `store` workflow is rerun on the same commit, it increments beyond the last production tag so Google Play receives a new version code.
 
 ## Build from source
 
@@ -83,6 +83,7 @@ cd Scanner
 ```
 
 The debug APK is created in `app/build/outputs/apk/debug/`. Release builds need a signing setup (`key.properties` and a keystore), which is not included in the repository.
+The `store` workflow also requires a `PLAY_STORE_SERVICE_ACCOUNT_JSON` GitHub secret containing a Google Play service account authorized to publish this app.
 
 ## Download
 

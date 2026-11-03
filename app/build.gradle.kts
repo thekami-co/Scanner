@@ -22,7 +22,7 @@ fun gitCommitCount(): Int = try {
     1
 }
 
-val appVersionCode = gitCommitCount()
+val appVersionCode = providers.gradleProperty("releaseVersionCode").orNull?.toInt() ?: gitCommitCount()
 val appVersionName = "1.0.$appVersionCode"
 
 android {

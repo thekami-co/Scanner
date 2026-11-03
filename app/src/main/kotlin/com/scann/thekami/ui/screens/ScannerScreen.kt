@@ -80,6 +80,7 @@ import com.scann.thekami.ui.components.bottomNavHeight
 import com.scann.thekami.util.GalleryScanner
 import com.scann.thekami.util.Haptics
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.Locale
@@ -113,6 +114,8 @@ fun ScannerScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val animations = LocalAnimationsEnabled.current
     val coroutineScope = rememberCoroutineScope()
+    var pendingScanJob by remember { mutableStateOf<Job?>(null) }
+    var galleryScanJob by remember { mutableStateOf<Job?>(null) }
     val isActiveState by rememberUpdatedState(isActive)
     val animationsState by rememberUpdatedState(animations)
     val currentOnBarcodeScanned by rememberUpdatedState(onBarcodeScanned)
@@ -147,12 +150,17 @@ fun ScannerScreen(
         }
     }
 
-    // Reset scan state whenever this screen becomes active again (e.g. user backs out of the result screen)
+    // Leaving Scan invalidates both the confirmation delay and any in-flight gallery scan.
     LaunchedEffect(isActive) {
         if (isActive) {
             hasScanned = false
             showSuccessFlash = false
             detectedRect = null
+        } else {
+            pendingScanJob?.cancel()
+            galleryScanJob?.cancel()
+            isProcessingGalleryImage = false
+            galleryScanFailed = false
         }
     }
 
@@ -191,20 +199,25 @@ fun ScannerScreen(
     // Snaps the frame onto the code (when we know where it is), confirms with haptics,
     // waits briefly so the user sees it, then navigates to the result.
     fun confirmScan(result: ScanResult, box: DetectedBox? = null) {
+        if (!isActiveState || hasScanned ||
+            !lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+        ) return
         hasScanned = true
         showSuccessFlash = true
         detectedRect = box?.toViewRect(viewSize, mirrored = lensFacing == CameraSelector.LENS_FACING_FRONT)
         Haptics.confirm(view)
-        coroutineScope.launch {
+        pendingScanJob = coroutineScope.launch {
             delay(if (animationsState) 500 else 120)
-            currentOnBarcodeScanned(result)
+            if (isActiveState && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                currentOnBarcodeScanned(result)
+            }
         }
     }
 
     // One analyzer (and one ML Kit client) for the lifetime of the screen, reused on every bind.
     val analyzer = remember {
         BarcodeAnalyzer { result, box ->
-            if (isActiveState && !hasScanned) {
+            if (isActiveState && !hasScanned && !isProcessingGalleryImage) {
                 confirmScan(result, box)
             }
         }
@@ -213,12 +226,14 @@ fun ScannerScreen(
     val galleryPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        if (uri != null && !hasScanned) {
-            isProcessingGalleryImage = true
+        if (uri == null || !isActiveState || hasScanned || !isProcessingGalleryImage) {
+            isProcessingGalleryImage = false
+        } else {
             galleryScanFailed = false
-            coroutineScope.launch {
+            galleryScanJob = coroutineScope.launch {
                 val result = GalleryScanner.scanImage(context, uri)
                 isProcessingGalleryImage = false
+                if (!isActiveState || hasScanned) return@launch
                 if (result != null) {
                     confirmScan(result)
                 } else {
@@ -248,8 +263,22 @@ fun ScannerScreen(
     // Pick the permission up again if the user granted it from system settings
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                hasCameraPermission = checkCameraPermission()
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> hasCameraPermission = checkCameraPermission()
+                Lifecycle.Event.ON_STOP -> {
+                    if (pendingScanJob?.isActive == true) {
+                        pendingScanJob?.cancel()
+                        hasScanned = false
+                        showSuccessFlash = false
+                        detectedRect = null
+                    }
+                    if (galleryScanJob?.isActive == true) {
+                        galleryScanJob?.cancel()
+                        isProcessingGalleryImage = false
+                        galleryScanFailed = false
+                    }
+                }
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -258,6 +287,8 @@ fun ScannerScreen(
 
     DisposableEffect(Unit) {
         onDispose {
+            pendingScanJob?.cancel()
+            galleryScanJob?.cancel()
             cameraExecutor.shutdown()
             analyzer.close()
         }
@@ -352,50 +383,6 @@ fun ScannerScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .statusBarsPadding()
-                        .padding(top = 16.dp, start = 20.dp, end = 20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    ScanHint()
-
-                    AnimatedVisibility(
-                        visible = galleryScanFailed,
-                        enter = fadeInSpec,
-                        exit = fadeOutSpec,
-                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
-                    ) {
-                        Surface(
-                            shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.errorContainer
-                        ) {
-                            Text(
-                                text = "No QR code or barcode found in this image",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-                            )
-                        }
-                    }
-                }
-
-                CircleIconButton(
-                    iconRes = R.drawable.hgi_gallery,
-                    contentDescription = "Scan from gallery",
-                    loading = isProcessingGalleryImage,
-                    onClick = {
-                        galleryPickerLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    },
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(start = 24.dp, bottom = 24.dp)
-                )
-
                 AnimatedVisibility(
                     visible = showZoomIndicator,
                     enter = fadeInSpec,
@@ -452,6 +439,52 @@ fun ScannerScreen(
                 }
             )
         }
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 16.dp, start = 20.dp, end = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            if (hasCameraPermission) ScanHint()
+            AnimatedVisibility(
+                visible = galleryScanFailed,
+                enter = fadeInSpec,
+                exit = fadeOutSpec,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+            ) {
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.errorContainer
+                ) {
+                    Text(
+                        text = "No QR code or barcode found in this image",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                    )
+                }
+            }
+        }
+        CircleIconButton(
+            iconRes = R.drawable.hgi_gallery,
+            contentDescription = "Scan from gallery",
+            loading = isProcessingGalleryImage,
+            onClick = {
+                if (isActiveState && !hasScanned && !isProcessingGalleryImage) {
+                    isProcessingGalleryImage = true
+                    galleryScanFailed = false
+                    galleryPickerLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                }
+            },
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .navigationBarsPadding()
+                .padding(start = 24.dp, bottom = bottomNavHeight() + 24.dp)
+        )
     }
 }
 

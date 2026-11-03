@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
@@ -36,28 +37,29 @@ private val WifiSecurityOptions = listOf("WPA/WPA2", "WEP", "None")
 @Composable
 fun GeneratorScreen() {
     val focusManager = LocalFocusManager.current
-    var selectedType by remember { mutableStateOf(QrContentType.TEXT) }
+    var selectedType by rememberSaveable { mutableStateOf(QrContentType.TEXT) }
     var generatedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var isGenerating by remember { mutableStateOf(false) }
+    var generationError by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     // Form fields
-    var textValue by remember { mutableStateOf("") }
-    var urlValue by remember { mutableStateOf("") }
-    var wifiSsid by remember { mutableStateOf("") }
-    var wifiPassword by remember { mutableStateOf("") }
-    var wifiSecurity by remember { mutableStateOf(WifiSecurityOptions.first()) }
-    var wifiHidden by remember { mutableStateOf(false) }
-    var contactName by remember { mutableStateOf("") }
-    var contactPhone by remember { mutableStateOf("") }
-    var contactEmail by remember { mutableStateOf("") }
-    var contactOrg by remember { mutableStateOf("") }
-    var phoneValue by remember { mutableStateOf("") }
-    var emailAddress by remember { mutableStateOf("") }
-    var emailSubject by remember { mutableStateOf("") }
-    var emailBody by remember { mutableStateOf("") }
-    var smsNumber by remember { mutableStateOf("") }
-    var smsMessage by remember { mutableStateOf("") }
+    var textValue by rememberSaveable { mutableStateOf("") }
+    var urlValue by rememberSaveable { mutableStateOf("") }
+    var wifiSsid by rememberSaveable { mutableStateOf("") }
+    var wifiPassword by rememberSaveable { mutableStateOf("") }
+    var wifiSecurity by rememberSaveable { mutableStateOf(WifiSecurityOptions.first()) }
+    var wifiHidden by rememberSaveable { mutableStateOf(false) }
+    var contactName by rememberSaveable { mutableStateOf("") }
+    var contactPhone by rememberSaveable { mutableStateOf("") }
+    var contactEmail by rememberSaveable { mutableStateOf("") }
+    var contactOrg by rememberSaveable { mutableStateOf("") }
+    var phoneValue by rememberSaveable { mutableStateOf("") }
+    var emailAddress by rememberSaveable { mutableStateOf("") }
+    var emailSubject by rememberSaveable { mutableStateOf("") }
+    var emailBody by rememberSaveable { mutableStateOf("") }
+    var smsNumber by rememberSaveable { mutableStateOf("") }
+    var smsMessage by rememberSaveable { mutableStateOf("") }
 
     fun buildEncodedContent(): String {
         return when (selectedType) {
@@ -83,9 +85,12 @@ fun GeneratorScreen() {
         focusManager.clearFocus()
         val content = buildEncodedContent()
         if (content.isBlank() || isGenerating) return
+        generationError = false
         isGenerating = true
         scope.launch {
-            generatedBitmap = withContext(Dispatchers.Default) { QrCodeGenerator.generate(content) }
+            val bitmap = withContext(Dispatchers.Default) { QrCodeGenerator.generate(content) }
+            generatedBitmap = bitmap
+            generationError = bitmap == null
             isGenerating = false
         }
     }
@@ -269,6 +274,15 @@ fun GeneratorScreen() {
                             )
                         }
                     }
+                }
+
+                if (generationError) {
+                    Text(
+                        "Could not create a QR code. Try shortening the content and generate again.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
