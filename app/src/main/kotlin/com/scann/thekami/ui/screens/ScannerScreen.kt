@@ -2,6 +2,7 @@ package com.scann.thekami.ui.screens
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -10,7 +11,9 @@ import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.DrawableRes
 import androidx.camera.core.Camera
+import androidx.camera.core.CameraInfoUnavailableException
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -38,12 +41,6 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.FlashOff
-import androidx.compose.material.icons.filled.FlashOn
-import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -55,12 +52,12 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -74,6 +71,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.scann.thekami.R
 import com.scann.thekami.camera.BarcodeAnalyzer
 import com.scann.thekami.camera.DetectedBox
 import com.scann.thekami.model.ScanResult
@@ -83,9 +81,12 @@ import com.scann.thekami.util.GalleryScanner
 import com.scann.thekami.util.Haptics
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -97,6 +98,8 @@ private val ScanFrameSize = 260.dp
 private val DetectedPadding = 14.dp
 private val DetectedMinSide = 120.dp
 private val SuccessBadgeSize = 64.dp
+
+private const val TabAnimationMs = 220L
 
 @Composable
 fun ScannerScreen(
@@ -123,6 +126,9 @@ fun ScannerScreen(
 
     var isFlashOn by remember { mutableStateOf(false) }
     var camera by remember { mutableStateOf<Camera?>(null) }
+    var boundLens by remember { mutableIntStateOf(-1) }
+    var lensFacing by remember { mutableIntStateOf(CameraSelector.LENS_FACING_BACK) }
+    var hasMultipleCameras by remember { mutableStateOf(false) }
     var hasScanned by remember { mutableStateOf(false) }
     var showSuccessFlash by remember { mutableStateOf(false) }
     var detectedRect by remember { mutableStateOf<Rect?>(null) }
@@ -132,6 +138,14 @@ fun ScannerScreen(
 
     var zoomRatio by remember { mutableFloatStateOf(1f) }
     var showZoomIndicator by remember { mutableStateOf(false) }
+
+    // COMPATIBLE (TextureView) so the tab fade animation also fades the camera
+    val previewView = remember {
+        PreviewView(context).apply {
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+        }
+    }
 
     // Reset scan state whenever this screen becomes active again (e.g. user backs out of the result screen)
     LaunchedEffect(isActive) {
@@ -179,11 +193,20 @@ fun ScannerScreen(
     fun confirmScan(result: ScanResult, box: DetectedBox? = null) {
         hasScanned = true
         showSuccessFlash = true
-        detectedRect = box?.toViewRect(viewSize)
+        detectedRect = box?.toViewRect(viewSize, mirrored = lensFacing == CameraSelector.LENS_FACING_FRONT)
         Haptics.confirm(view)
         coroutineScope.launch {
             delay(if (animationsState) 500 else 120)
             currentOnBarcodeScanned(result)
+        }
+    }
+
+    // One analyzer (and one ML Kit client) for the lifetime of the screen, reused on every bind.
+    val analyzer = remember {
+        BarcodeAnalyzer { result, box ->
+            if (isActiveState && !hasScanned) {
+                confirmScan(result, box)
+            }
         }
     }
 
@@ -234,7 +257,70 @@ fun ScannerScreen(
     }
 
     DisposableEffect(Unit) {
-        onDispose { cameraExecutor.shutdown() }
+        onDispose {
+            cameraExecutor.shutdown()
+            analyzer.close()
+        }
+    }
+
+    // The camera is bound only while the scan screen is in use and released on other tabs
+    // and overlays. Binding and releasing wait for the tab animation so they don't cause jank.
+    LaunchedEffect(hasCameraPermission, isActive, lensFacing) {
+        if (!hasCameraPermission) return@LaunchedEffect
+
+        if (isActive != (camera != null) && animationsState) delay(TabAnimationMs)
+
+        val cameraProvider = try {
+            context.awaitCameraProvider()
+        } catch (e: Exception) {
+            return@LaunchedEffect
+        }
+
+        if (!isActive) {
+            cameraProvider.unbindAll()
+            camera = null
+            boundLens = -1
+            isFlashOn = false
+            return@LaunchedEffect
+        }
+        if (camera != null && boundLens == lensFacing) return@LaunchedEffect
+
+        val hasBack = cameraProvider.hasCameraSafe(CameraSelector.DEFAULT_BACK_CAMERA)
+        val hasFront = cameraProvider.hasCameraSafe(CameraSelector.DEFAULT_FRONT_CAMERA)
+        hasMultipleCameras = hasBack && hasFront
+
+        val wantsFront = lensFacing == CameraSelector.LENS_FACING_FRONT
+        if ((wantsFront && !hasFront) || (!wantsFront && !hasBack)) {
+            if (wantsFront && hasBack) lensFacing = CameraSelector.LENS_FACING_BACK
+            if (!wantsFront && hasFront) lensFacing = CameraSelector.LENS_FACING_FRONT
+            return@LaunchedEffect
+        }
+
+        isFlashOn = false
+
+        // Same 16:9 aspect for preview and analysis, so a point on the analysed
+        // frame maps onto the preview without distortion. Analysis runs at a lower
+        // resolution, which is plenty for codes and much lighter on weak devices.
+        val preview = Preview.Builder()
+            .setResolutionSelector(resolutionSelector(1920, 1080))
+            .build()
+            .also { it.setSurfaceProvider(previewView.surfaceProvider) }
+
+        val imageAnalysis = ImageAnalysis.Builder()
+            .setResolutionSelector(resolutionSelector(1280, 720))
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .build()
+            .also { it.setAnalyzer(cameraExecutor, analyzer) }
+
+        val selector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
+
+        try {
+            cameraProvider.unbindAll()
+            camera = cameraProvider.bindToLifecycle(lifecycleOwner, selector, preview, imageAnalysis)
+            boundLens = lensFacing
+        } catch (e: Exception) {
+            // Camera bind failed
+        }
     }
 
     val fadeInSpec = if (animations) fadeIn() else EnterTransition.None
@@ -243,61 +329,7 @@ fun ScannerScreen(
     Box(modifier = modifier.background(Color.Black)) {
         if (hasCameraPermission) {
             AndroidView(
-                factory = { ctx ->
-                    // COMPATIBLE (TextureView) so the tab fade animation also fades the camera
-                    val previewView = PreviewView(ctx).apply {
-                        implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-                        scaleType = PreviewView.ScaleType.FILL_CENTER
-                    }
-                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-
-                    cameraProviderFuture.addListener({
-                        val cameraProvider = cameraProviderFuture.get()
-
-                        // Same 16:9 aspect for preview and analysis, so a point on the
-                        // analysed frame maps onto the preview without distortion.
-                        val resolutionSelector = ResolutionSelector.Builder()
-                            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
-                            .setResolutionStrategy(
-                                ResolutionStrategy(
-                                    Size(1920, 1080),
-                                    ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
-                                )
-                            )
-                            .build()
-
-                        val preview = Preview.Builder()
-                            .setResolutionSelector(resolutionSelector)
-                            .build()
-                            .also { it.setSurfaceProvider(previewView.surfaceProvider) }
-
-                        val imageAnalysis = ImageAnalysis.Builder()
-                            .setResolutionSelector(resolutionSelector)
-                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                            .build()
-                            .also {
-                                it.setAnalyzer(cameraExecutor, BarcodeAnalyzer { result, box ->
-                                    if (isActiveState && !hasScanned) {
-                                        confirmScan(result, box)
-                                    }
-                                })
-                            }
-
-                        try {
-                            cameraProvider.unbindAll()
-                            camera = cameraProvider.bindToLifecycle(
-                                lifecycleOwner,
-                                CameraSelector.DEFAULT_BACK_CAMERA,
-                                preview,
-                                imageAnalysis
-                            )
-                        } catch (e: Exception) {
-                            // Camera bind failed
-                        }
-                    }, ContextCompat.getMainExecutor(ctx))
-
-                    previewView
-                },
+                factory = { previewView },
                 modifier = Modifier
                     .fillMaxSize()
                     .onSizeChanged { viewSize = it }
@@ -351,7 +383,7 @@ fun ScannerScreen(
                 }
 
                 CircleIconButton(
-                    icon = Icons.Filled.PhotoLibrary,
+                    iconRes = R.drawable.hgi_gallery,
                     contentDescription = "Scan from gallery",
                     loading = isProcessingGalleryImage,
                     onClick = {
@@ -375,18 +407,38 @@ fun ScannerScreen(
                     ZoomIndicator(ratio = zoomRatio)
                 }
 
-                CircleIconButton(
-                    icon = if (isFlashOn) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
-                    contentDescription = if (isFlashOn) "Turn flash off" else "Turn flash on",
-                    active = isFlashOn,
-                    onClick = {
-                        isFlashOn = !isFlashOn
-                        camera?.cameraControl?.enableTorch(isFlashOn)
-                    },
+                Row(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = 24.dp, bottom = 24.dp)
-                )
+                        .padding(end = 24.dp, bottom = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (hasMultipleCameras) {
+                        CircleIconButton(
+                            iconRes = R.drawable.hgi_switch_camera,
+                            contentDescription = "Switch camera",
+                            onClick = {
+                                Haptics.tick(view)
+                                lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
+                                    CameraSelector.LENS_FACING_FRONT
+                                } else {
+                                    CameraSelector.LENS_FACING_BACK
+                                }
+                            }
+                        )
+                    }
+                    if (camera?.cameraInfo?.hasFlashUnit() == true) {
+                        CircleIconButton(
+                            iconRes = if (isFlashOn) R.drawable.hgi_flash_on else R.drawable.hgi_flash_off,
+                            contentDescription = if (isFlashOn) "Turn flash off" else "Turn flash on",
+                            active = isFlashOn,
+                            onClick = {
+                                isFlashOn = !isFlashOn
+                                camera?.cameraControl?.enableTorch(isFlashOn)
+                            }
+                        )
+                    }
+                }
             }
         } else {
             CameraPermissionPrompt(
@@ -403,22 +455,57 @@ fun ScannerScreen(
     }
 }
 
-/** Maps a box from the analysed frame onto a FILL_CENTER preview of [viewSize]. */
-private fun DetectedBox.toViewRect(viewSize: IntSize): Rect? {
+private fun resolutionSelector(width: Int, height: Int): ResolutionSelector =
+    ResolutionSelector.Builder()
+        .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
+        .setResolutionStrategy(
+            ResolutionStrategy(
+                Size(width, height),
+                ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
+            )
+        )
+        .build()
+
+private suspend fun Context.awaitCameraProvider(): ProcessCameraProvider =
+    suspendCancellableCoroutine { cont ->
+        val future = ProcessCameraProvider.getInstance(this)
+        future.addListener({
+            try {
+                cont.resume(future.get())
+            } catch (e: Exception) {
+                cont.resumeWithException(e)
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+private fun ProcessCameraProvider.hasCameraSafe(selector: CameraSelector): Boolean =
+    try {
+        hasCamera(selector)
+    } catch (e: CameraInfoUnavailableException) {
+        false
+    }
+
+/**
+ * Maps a box from the analysed frame onto a FILL_CENTER preview of [viewSize].
+ * The front camera preview is mirrored but the analysed frame is not, so [mirrored] flips x.
+ */
+private fun DetectedBox.toViewRect(viewSize: IntSize, mirrored: Boolean): Rect? {
     if (viewSize == IntSize.Zero || imageWidth == 0 || imageHeight == 0) return null
 
     val scale = max(viewSize.width / imageWidth.toFloat(), viewSize.height / imageHeight.toFloat())
     val offsetX = (viewSize.width - imageWidth * scale) / 2f
     val offsetY = (viewSize.height - imageHeight * scale) / 2f
 
+    val srcLeft = if (mirrored) imageWidth - rect.right else rect.left
+    val srcRight = if (mirrored) imageWidth - rect.left else rect.right
+
     return Rect(
-        left = rect.left * scale + offsetX,
+        left = srcLeft * scale + offsetX,
         top = rect.top * scale + offsetY,
-        right = rect.right * scale + offsetX,
+        right = srcRight * scale + offsetX,
         bottom = rect.bottom * scale + offsetY
     )
 }
-
 private fun Rect.coerceMinSide(minSide: Float): Rect {
     val newWidth = max(width, minSide)
     val newHeight = max(height, minSide)
@@ -442,7 +529,7 @@ private fun ScanHint() {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = Icons.Filled.QrCodeScanner,
+                painter = painterResource(R.drawable.hgi_scan),
                 contentDescription = null,
                 modifier = Modifier.size(20.dp)
             )
@@ -531,7 +618,7 @@ private fun ScanOverlay(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            imageVector = Icons.Filled.Check,
+                            painter = painterResource(R.drawable.hgi_check),
                             contentDescription = "Scan successful",
                             tint = MaterialTheme.colorScheme.onTertiary,
                             modifier = Modifier.size(36.dp)
@@ -542,6 +629,7 @@ private fun ScanOverlay(
         }
     }
 }
+
 
 private fun DrawScope.drawCornerBrackets(frame: Rect, color: Color) {
     val strokeWidth = 4.dp.toPx()
@@ -585,7 +673,7 @@ private fun DrawScope.drawCornerBrackets(frame: Rect, color: Color) {
 
 @Composable
 private fun CircleIconButton(
-    icon: ImageVector,
+    @DrawableRes iconRes: Int,
     contentDescription: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -614,7 +702,7 @@ private fun CircleIconButton(
                 )
             } else {
                 Icon(
-                    imageVector = icon,
+                    painter = painterResource(iconRes),
                     contentDescription = null,
                     modifier = Modifier.size(24.dp)
                 )
@@ -644,7 +732,7 @@ private fun CameraPermissionPrompt(
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = Icons.Filled.QrCodeScanner,
+                    painter = painterResource(R.drawable.hgi_scan),
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.size(32.dp)

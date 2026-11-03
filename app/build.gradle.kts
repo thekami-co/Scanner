@@ -111,7 +111,6 @@ dependencies {
     implementation("com.google.guava:guava:33.3.1-android")
 
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
-    implementation("com.google.android.gms:play-services-ads:23.6.0")
     implementation("androidx.cardview:cardview:1.0.0")
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.google.android.play:review-ktx:2.0.2")

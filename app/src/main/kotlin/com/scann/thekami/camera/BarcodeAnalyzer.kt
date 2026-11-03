@@ -1,6 +1,7 @@
 package com.scann.thekami.camera
 
 import android.graphics.Rect
+import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
@@ -22,14 +23,15 @@ data class DetectedBox(
     val imageHeight: Int
 )
 
+/** Analyses at most ~8 frames per second to keep CPU use low on weak devices. */
+private const val MinFrameIntervalMs = 120L
+
 class BarcodeAnalyzer(
     private val onResult: (ScanResult, DetectedBox?) -> Unit
 ) : ImageAnalysis.Analyzer {
 
     private val options = BarcodeScannerOptions.Builder()
-        .setBarcodeFormats(
-            Barcode.FORMAT_ALL_FORMATS
-        )
+        .setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS)
         .build()
 
     private val scanner = BarcodeScanning.getClient(options)
@@ -37,15 +39,19 @@ class BarcodeAnalyzer(
     @Volatile
     private var isProcessing = false
 
+    private var lastAnalyzedAt = 0L
+
     @OptIn(ExperimentalGetImage::class)
     override fun analyze(imageProxy: ImageProxy) {
         val mediaImage = imageProxy.image
+        val now = SystemClock.elapsedRealtime()
 
-        if (mediaImage == null || isProcessing) {
+        if (mediaImage == null || isProcessing || now - lastAnalyzedAt < MinFrameIntervalMs) {
             imageProxy.close()
             return
         }
 
+        lastAnalyzedAt = now
         isProcessing = true
         val rotation = imageProxy.imageInfo.rotationDegrees
         val swapped = rotation == 90 || rotation == 270
@@ -68,5 +74,9 @@ class BarcodeAnalyzer(
                 isProcessing = false
                 imageProxy.close()
             }
+    }
+
+    fun close() {
+        scanner.close()
     }
 }
