@@ -9,7 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -97,6 +97,7 @@ fun ScannApp(
     val context = LocalContext.current
     val view = LocalView.current
     var selectedTab by remember { mutableStateOf(initialTab ?: NavTab.SCAN) }
+    var visitedTabs by remember { mutableStateOf(setOf(initialTab ?: NavTab.SCAN)) }
     var overlay by remember { mutableStateOf<Overlay>(Overlay.None) }
     var lastResult by remember { mutableStateOf<ScanResult?>(null) }
     var backProgress by remember { mutableFloatStateOf(0f) }
@@ -107,6 +108,7 @@ fun ScannApp(
     val navStyle = if (settings.floatingNav) NavBarStyle.FLOATING else NavBarStyle.DOCKED
     val isDark = isSystemInDarkTheme()
     val onCamera = selectedTab == NavTab.SCAN && overlay is Overlay.None
+    LaunchedEffect(selectedTab) { visitedTabs = visitedTabs + selectedTab }
 
     LaunchedEffect(initialTab) {
         if (initialTab != null) {
@@ -162,7 +164,7 @@ fun ScannApp(
             Surface(modifier = Modifier.fillMaxSize()) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     // Keep CameraX bound while navigating so returning to Scan is instant.
-                    TabLayer(visible = selectedTab == NavTab.SCAN) {
+                    TabLayer(visible = selectedTab == NavTab.SCAN, composed = selectedTab == NavTab.SCAN || NavTab.SCAN in visitedTabs) {
                         ScannerScreen(
                             isActive = selectedTab == NavTab.SCAN && overlay is Overlay.None,
                             modifier = Modifier.fillMaxSize(),
@@ -171,10 +173,10 @@ fun ScannApp(
                             }
                         )
                     }
-                    TabLayer(visible = selectedTab == NavTab.CREATE) {
+                    TabLayer(visible = selectedTab == NavTab.CREATE, composed = selectedTab == NavTab.CREATE || NavTab.CREATE in visitedTabs) {
                         GeneratorScreen()
                     }
-                    TabLayer(visible = selectedTab == NavTab.SETTINGS) {
+                    TabLayer(visible = selectedTab == NavTab.SETTINGS, composed = selectedTab == NavTab.SETTINGS || NavTab.SETTINGS in visitedTabs) {
                         SettingsScreen(
                             onAboutClick = { overlay = Overlay.About },
                             settings = settings,
@@ -245,33 +247,6 @@ fun ScannApp(
     }
 }
 
-/** One of the main tabs. Hidden tabs stay composed (so the camera keeps running) but fade out. */
-@Composable
-private fun TabLayer(
-    visible: Boolean,
-    content: @Composable () -> Unit
-) {
-    val animations = LocalAnimationsEnabled.current
-    val progress by animateFloatAsState(
-        targetValue = if (visible) 1f else 0f,
-        animationSpec = tween(durationMillis = if (animations) 220 else 0),
-        label = "tabLayerProgress"
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .zIndex(if (visible) 0f else -1f)
-            .graphicsLayer {
-                alpha = progress
-                translationY = (1f - progress) * 12.dp.toPx()
-            }
-            .then(if (visible) Modifier else Modifier.clearAndSetSemantics { })
-    ) {
-        content()
-    }
-}
-
 /** Full-screen overlay that shrinks and rounds its corners while the user swipes back. */
 @Composable
 private fun OverlayLayer(
@@ -291,5 +266,37 @@ private fun OverlayLayer(
             }
     ) {
         content()
+    }
+}
+
+/**
+ * One of the main tabs. Hidden tabs stay composed (so their state survives) but are invisible.
+ * Only the tab being shown fades in, so at most one layer is blended per frame.
+ */
+@Composable
+private fun TabLayer(
+    visible: Boolean,
+    composed: Boolean,
+    content: @Composable () -> Unit
+) {
+    val animations = LocalAnimationsEnabled.current
+    val alpha = remember { Animatable(if (visible) 1f else 0f) }
+
+    LaunchedEffect(visible, animations) {
+        when {
+            !visible -> alpha.snapTo(0f)
+            animations -> alpha.animateTo(1f, tween(durationMillis = 160))
+            else -> alpha.snapTo(1f)
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(if (visible) 0f else -1f)
+            .graphicsLayer { this.alpha = alpha.value }
+            .then(if (visible) Modifier else Modifier.clearAndSetSemantics { })
+    ) {
+        if (composed) content()
     }
 }

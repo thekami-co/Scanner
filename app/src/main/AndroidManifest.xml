@@ -7,7 +7,6 @@
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
-    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
 
     <uses-feature
         android:name="android.hardware.camera"
@@ -77,10 +76,6 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
-
-        <meta-data
-            android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-4015145068033513~7229239399" />
 
     </application>
 

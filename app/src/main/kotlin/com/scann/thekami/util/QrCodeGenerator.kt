@@ -9,6 +9,7 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 
 object QrCodeGenerator {
 
+    /** CPU-heavy: call from a background dispatcher. */
     fun generate(text: String, sizePx: Int = 512): Bitmap? {
         if (text.isBlank()) return null
 
@@ -17,16 +18,21 @@ object QrCodeGenerator {
                 EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M,
                 EncodeHintType.MARGIN to 1
             )
-            val writer = QRCodeWriter()
-            val bitMatrix = writer.encode(text, BarcodeFormat.QR_CODE, sizePx, sizePx, hints)
+            val bitMatrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, sizePx, sizePx, hints)
+            val width = bitMatrix.width
+            val height = bitMatrix.height
 
-            val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-            for (x in 0 until sizePx) {
-                for (y in 0 until sizePx) {
-                    bitmap.setPixel(x, y, if (bitMatrix[x, y]) Color.BLACK else Color.WHITE)
+            val pixels = IntArray(width * height)
+            for (y in 0 until height) {
+                val offset = y * width
+                for (x in 0 until width) {
+                    pixels[offset + x] = if (bitMatrix[x, y]) Color.BLACK else Color.WHITE
                 }
             }
-            bitmap
+
+            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
+                setPixels(pixels, 0, width, 0, 0, width, height)
+            }
         } catch (e: Exception) {
             null
         }

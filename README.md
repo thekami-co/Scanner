@@ -31,7 +31,7 @@ You can also create your own QR codes, scan from a gallery image, and start scan
 | License | GPL-3.0, open source |
 | Package | `com.scann.thekami` |
 | Account | Not needed |
-| Ads | Banner ads (Google AdMob) |
+| Ads | None |
 | Your scans | Processed on your device |
 
 ## How it works
@@ -105,7 +105,7 @@ Issues and pull requests are welcome.
 
 ## Privacy
 
-Scanning and generating happen on your device, and scanned content is not uploaded by the app. The app shows banner ads through Google AdMob, which may collect device and advertising data under Google's own policies.
+Scanning and generating happen on your device, and scanned content is not uploaded by the app. The app shows no ads.
 
 ## Community
 

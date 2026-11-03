@@ -22,9 +22,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -52,6 +52,7 @@ fun QrResultScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+    val imageBitmap = remember(qrBitmap) { qrBitmap.asImageBitmap() }
 
     BackHandler(onBack = onBack)
 
@@ -176,12 +177,12 @@ fun QrResultScreen(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Image(
-                        bitmap = qrBitmap.asImageBitmap(),
+                        bitmap = imageBitmap,
+                        filterQuality = FilterQuality.None,
                         contentDescription = "Generated QR Code",
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(QrContainerPadding)
-                            .clip(RoundedCornerShape(QrInnerRadius))
                     )
                 }
             }
