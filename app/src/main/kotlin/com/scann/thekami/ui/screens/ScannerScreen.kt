@@ -99,6 +99,8 @@ private val DetectedPadding = 14.dp
 private val DetectedMinSide = 120.dp
 private val SuccessBadgeSize = 64.dp
 
+private const val TabAnimationMs = 220L
+
 @Composable
 fun ScannerScreen(
     modifier: Modifier = Modifier,
@@ -124,6 +126,7 @@ fun ScannerScreen(
 
     var isFlashOn by remember { mutableStateOf(false) }
     var camera by remember { mutableStateOf<Camera?>(null) }
+    var boundLens by remember { mutableIntStateOf(-1) }
     var lensFacing by remember { mutableIntStateOf(CameraSelector.LENS_FACING_BACK) }
     var hasMultipleCameras by remember { mutableStateOf(false) }
     var hasScanned by remember { mutableStateOf(false) }
@@ -198,6 +201,15 @@ fun ScannerScreen(
         }
     }
 
+    // One analyzer (and one ML Kit client) for the lifetime of the screen, reused on every bind.
+    val analyzer = remember {
+        BarcodeAnalyzer { result, box ->
+            if (isActiveState && !hasScanned) {
+                confirmScan(result, box)
+            }
+        }
+    }
+
     val galleryPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
@@ -245,65 +257,67 @@ fun ScannerScreen(
     }
 
     DisposableEffect(Unit) {
-        onDispose { cameraExecutor.shutdown() }
+        onDispose {
+            cameraExecutor.shutdown()
+            analyzer.close()
+        }
     }
 
-    // Binds (and rebinds on camera switch) preview + analysis.
-    LaunchedEffect(hasCameraPermission, lensFacing) {
+    // The camera is bound only while the scan screen is in use and released on other tabs
+    // and overlays. Binding and releasing wait for the tab animation so they don't cause jank.
+    LaunchedEffect(hasCameraPermission, isActive, lensFacing) {
         if (!hasCameraPermission) return@LaunchedEffect
 
-        isFlashOn = false
+        if (isActive != (camera != null) && animationsState) delay(TabAnimationMs)
+
         val cameraProvider = try {
             context.awaitCameraProvider()
         } catch (e: Exception) {
             return@LaunchedEffect
         }
 
+        if (!isActive) {
+            cameraProvider.unbindAll()
+            camera = null
+            boundLens = -1
+            isFlashOn = false
+            return@LaunchedEffect
+        }
+        if (camera != null && boundLens == lensFacing) return@LaunchedEffect
+
         val hasBack = cameraProvider.hasCameraSafe(CameraSelector.DEFAULT_BACK_CAMERA)
         val hasFront = cameraProvider.hasCameraSafe(CameraSelector.DEFAULT_FRONT_CAMERA)
         hasMultipleCameras = hasBack && hasFront
 
         val wantsFront = lensFacing == CameraSelector.LENS_FACING_FRONT
-        if (wantsFront && !hasFront || !wantsFront && !hasBack) {
+        if ((wantsFront && !hasFront) || (!wantsFront && !hasBack)) {
             if (wantsFront && hasBack) lensFacing = CameraSelector.LENS_FACING_BACK
             if (!wantsFront && hasFront) lensFacing = CameraSelector.LENS_FACING_FRONT
             return@LaunchedEffect
         }
 
-        // Same 16:9 aspect for preview and analysis, so a point on the
-        // analysed frame maps onto the preview without distortion.
-        val resolutionSelector = ResolutionSelector.Builder()
-            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
-            .setResolutionStrategy(
-                ResolutionStrategy(
-                    Size(1920, 1080),
-                    ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
-                )
-            )
-            .build()
+        isFlashOn = false
 
+        // Same 16:9 aspect for preview and analysis, so a point on the analysed
+        // frame maps onto the preview without distortion. Analysis runs at a lower
+        // resolution, which is plenty for codes and much lighter on weak devices.
         val preview = Preview.Builder()
-            .setResolutionSelector(resolutionSelector)
+            .setResolutionSelector(resolutionSelector(1920, 1080))
             .build()
             .also { it.setSurfaceProvider(previewView.surfaceProvider) }
 
         val imageAnalysis = ImageAnalysis.Builder()
-            .setResolutionSelector(resolutionSelector)
+            .setResolutionSelector(resolutionSelector(1280, 720))
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .build()
-            .also {
-                it.setAnalyzer(cameraExecutor, BarcodeAnalyzer { result, box ->
-                    if (isActiveState && !hasScanned) {
-                        confirmScan(result, box)
-                    }
-                })
-            }
+            .also { it.setAnalyzer(cameraExecutor, analyzer) }
 
         val selector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
 
         try {
             cameraProvider.unbindAll()
             camera = cameraProvider.bindToLifecycle(lifecycleOwner, selector, preview, imageAnalysis)
+            boundLens = lensFacing
         } catch (e: Exception) {
             // Camera bind failed
         }
@@ -367,7 +381,8 @@ fun ScannerScreen(
                         }
                     }
                 }
-               CircleIconButton(
+
+                CircleIconButton(
                     iconRes = R.drawable.hgi_gallery,
                     contentDescription = "Scan from gallery",
                     loading = isProcessingGalleryImage,
@@ -440,6 +455,17 @@ fun ScannerScreen(
     }
 }
 
+private fun resolutionSelector(width: Int, height: Int): ResolutionSelector =
+    ResolutionSelector.Builder()
+        .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
+        .setResolutionStrategy(
+            ResolutionStrategy(
+                Size(width, height),
+                ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
+            )
+        )
+        .build()
+
 private suspend fun Context.awaitCameraProvider(): ProcessCameraProvider =
     suspendCancellableCoroutine { cont ->
         val future = ProcessCameraProvider.getInstance(this)
@@ -480,7 +506,6 @@ private fun DetectedBox.toViewRect(viewSize: IntSize, mirrored: Boolean): Rect? 
         bottom = rect.bottom * scale + offsetY
     )
 }
-
 private fun Rect.coerceMinSide(minSide: Float): Rect {
     val newWidth = max(width, minSide)
     val newHeight = max(height, minSide)

@@ -9,7 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -245,33 +245,6 @@ fun ScannApp(
     }
 }
 
-/** One of the main tabs. Hidden tabs stay composed (so the camera keeps running) but fade out. */
-@Composable
-private fun TabLayer(
-    visible: Boolean,
-    content: @Composable () -> Unit
-) {
-    val animations = LocalAnimationsEnabled.current
-    val progress by animateFloatAsState(
-        targetValue = if (visible) 1f else 0f,
-        animationSpec = tween(durationMillis = if (animations) 220 else 0),
-        label = "tabLayerProgress"
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .zIndex(if (visible) 0f else -1f)
-            .graphicsLayer {
-                alpha = progress
-                translationY = (1f - progress) * 12.dp.toPx()
-            }
-            .then(if (visible) Modifier else Modifier.clearAndSetSemantics { })
-    ) {
-        content()
-    }
-}
-
 /** Full-screen overlay that shrinks and rounds its corners while the user swipes back. */
 @Composable
 private fun OverlayLayer(
@@ -289,6 +262,37 @@ private fun OverlayLayer(
                 shape = RoundedCornerShape((BackCornerRadius * progress).dp)
                 clip = progress > 0f
             }
+    ) {
+        content()
+    }
+}
+
+/**
+ * One of the main tabs. Hidden tabs stay composed (so their state survives) but are invisible.
+ * Only the tab being shown fades in, so at most one layer is blended per frame.
+ */
+@Composable
+private fun TabLayer(
+    visible: Boolean,
+    content: @Composable () -> Unit
+) {
+    val animations = LocalAnimationsEnabled.current
+    val alpha = remember { Animatable(if (visible) 1f else 0f) }
+
+    LaunchedEffect(visible, animations) {
+        when {
+            !visible -> alpha.snapTo(0f)
+            animations -> alpha.animateTo(1f, tween(durationMillis = 160))
+            else -> alpha.snapTo(1f)
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(if (visible) 0f else -1f)
+            .graphicsLayer { this.alpha = alpha.value }
+            .then(if (visible) Modifier else Modifier.clearAndSetSemantics { })
     ) {
         content()
     }
