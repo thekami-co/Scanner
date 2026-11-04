@@ -1,5 +1,6 @@
 package com.scann.thekami.ui.screens
 
+import android.os.Build
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -230,12 +231,22 @@ private fun ResultActions(scanResult: ScanResult, onAction: (ScanAction) -> Unit
                 }
             }
             is ScanResultType.WifiNetwork -> {
-                ActionButton("Connect to Wi-Fi", Icons.Filled.Wifi) {
-                    onAction(ScanAction.ConnectWifi(type.ssid, type.password, type.encryptionType))
-                }
-                type.password?.let {
-                    ActionButton("Copy Password", Icons.Filled.ContentCopy, filled = false) {
-                        onAction(ScanAction.CopyText(it))
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    ActionButton("Connect to Wi-Fi", Icons.Filled.Wifi) {
+                        onAction(ScanAction.ConnectWifi(type.ssid, type.password, type.encryptionType))
+                    }
+                    type.password?.let {
+                        ActionButton("Copy Password", Icons.Filled.ContentCopy, filled = false) {
+                            onAction(ScanAction.CopyText(it))
+                        }
+                    }
+                } else {
+                    val password = type.password?.takeIf { it.isNotBlank() }
+                    ActionButton(
+                        if (password != null) "Copy Wi-Fi password" else "Copy network name",
+                        Icons.Filled.ContentCopy
+                    ) {
+                        onAction(ScanAction.CopyText(password ?: type.ssid))
                     }
                 }
             }
@@ -249,7 +260,7 @@ private fun ResultActions(scanResult: ScanResult, onAction: (ScanAction) -> Unit
                     onAction(
                         ScanAction.AddCalendarEvent(
                             type.title, type.description, type.location,
-                            type.startTimeMillis, type.endTimeMillis
+                            type.startTimeMillis, type.endTimeMillis, type.isAllDay
                         )
                     )
                 }

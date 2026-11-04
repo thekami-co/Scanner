@@ -1,8 +1,12 @@
 package com.scann.thekami.model
 
 import com.google.mlkit.vision.barcode.common.Barcode
+import java.util.Calendar
+import java.util.TimeZone
 
 object BarcodeParser {
+    private const val DayMillis = 86_400_000L
+    private val utc = TimeZone.getTimeZone("UTC")
 
     fun parse(barcode: Barcode): ScanResult {
         val raw = barcode.rawValue ?: ""
@@ -56,28 +60,23 @@ object BarcodeParser {
 
             Barcode.TYPE_CALENDAR_EVENT -> {
                 val event = barcode.calendarEvent
+                val start = event?.start
+                val isAllDay = start != null && isDateOnly(start)
+                val startMillis = start?.let { calendarTimeMillis(it) }
+                val endMillis = if (isAllDay && startMillis != null) {
+                    // DATE ends are exclusive; absent or same-day ends still span one full day.
+                    val dateEnd = event.end?.takeIf(::isDateOnly)?.let { calendarTimeMillis(it) }
+                    if (dateEnd != null && dateEnd > startMillis) dateEnd else startMillis + DayMillis
+                } else {
+                    event?.end?.let { calendarTimeMillis(it) }
+                }
                 ScanResultType.CalendarEvent(
                     title = event?.summary,
                     description = event?.description,
                     location = event?.location,
-                    startTimeMillis = event?.start?.let {
-                        try {
-                            java.util.Calendar.getInstance().apply {
-                                set(it.year, it.month - 1, it.day, it.hours, it.minutes, it.seconds)
-                            }.timeInMillis
-                        } catch (e: Exception) {
-                            null
-                        }
-                    },
-                    endTimeMillis = event?.end?.let {
-                        try {
-                            java.util.Calendar.getInstance().apply {
-                                set(it.year, it.month - 1, it.day, it.hours, it.minutes, it.seconds)
-                            }.timeInMillis
-                        } catch (e: Exception) {
-                            null
-                        }
-                    }
+                    startTimeMillis = startMillis,
+                    endTimeMillis = endMillis,
+                    isAllDay = isAllDay
                 )
             }
 
@@ -90,6 +89,25 @@ object BarcodeParser {
         }
 
         return ScanResult(type = type, rawValue = raw, format = format)
+    }
+
+    private fun isDateOnly(date: Barcode.CalendarDateTime): Boolean =
+        date.hours == -1 && date.minutes == -1 && date.seconds == -1
+
+    private fun calendarTimeMillis(date: Barcode.CalendarDateTime): Long? = try {
+        val dateOnly = isDateOnly(date)
+        Calendar.getInstance(if (dateOnly || date.isUtc) utc else TimeZone.getDefault()).apply {
+            isLenient = false
+            clear()
+            set(
+                date.year, date.month - 1, date.day,
+                if (dateOnly) 0 else date.hours,
+                if (dateOnly) 0 else date.minutes,
+                if (date.seconds == -1) 0 else date.seconds
+            )
+        }.timeInMillis
+    } catch (e: IllegalArgumentException) {
+        null
     }
 
     private fun formatName(format: Int): String = when (format) {

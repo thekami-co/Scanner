@@ -34,6 +34,8 @@ import com.scann.thekami.ui.components.bottomNavHeight
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
+import java.util.UUID
 
 // QR card: outer = inner + padding (12 + 24 = 36)
 private val QrContainerPadding = 24.dp
@@ -74,8 +76,18 @@ fun QrResultScreen(
                     contentValues
                 )
                 if (uri != null) {
-                    context.contentResolver.openOutputStream(uri)?.use { out ->
-                        qrBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    var saved = false
+                    try {
+                        val out = context.contentResolver.openOutputStream(uri)
+                            ?: throw IOException("Could not open image output")
+                        out.use {
+                            if (!qrBitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) {
+                                throw IOException("Could not write QR code")
+                            }
+                        }
+                        saved = true
+                    } finally {
+                        if (!saved) context.contentResolver.delete(uri, null, null)
                     }
                     showMessage("Saved to Pictures/Scann")
                 } else {
@@ -87,8 +99,17 @@ fun QrResultScreen(
                     "Scann"
                 )
                 picturesDir.mkdirs()
-                FileOutputStream(File(picturesDir, filename)).use { out ->
-                    qrBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                val file = File(picturesDir, filename)
+                var saved = false
+                try {
+                    FileOutputStream(file).use { out ->
+                        if (!qrBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) {
+                            throw IOException("Could not write QR code")
+                        }
+                    }
+                    saved = true
+                } finally {
+                    if (!saved) file.delete()
                 }
                 showMessage("Saved to Pictures/Scann")
             }
@@ -121,7 +142,7 @@ fun QrResultScreen(
     fun shareQr() {
         try {
             val shareDir = File(context.cacheDir, "qr_share").apply { mkdirs() }
-            val file = File(shareDir, "scann_qr.png")
+            val file = File(shareDir, "scann_qr_${UUID.randomUUID()}.png")
             FileOutputStream(file).use { out ->
                 qrBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
             }

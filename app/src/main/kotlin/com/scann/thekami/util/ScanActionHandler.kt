@@ -24,16 +24,19 @@ object ScanActionHandler {
             is ScanAction.AddContact -> addContact(context, action.name, action.phone, action.email, action.organization)
             is ScanAction.AddCalendarEvent -> addCalendarEvent(
                 context, action.title, action.description, action.location,
-                action.startTimeMillis, action.endTimeMillis
+                action.startTimeMillis, action.endTimeMillis, action.isAllDay
             )
         }
     }
 
     private fun openUrl(context: Context, url: String) {
         try {
-            val fixedUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                "https://$url"
-            } else url
+            val fixedUrl = when {
+                url.startsWith("https://") || url.startsWith("http://") -> url
+                url.startsWith("https://", ignoreCase = true) -> "https://${url.substring(8)}"
+                url.startsWith("http://", ignoreCase = true) -> "http://${url.substring(7)}"
+                else -> "https://$url"
+            }
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(fixedUrl))
             context.startActivity(intent)
         } catch (e: Exception) {
@@ -57,7 +60,7 @@ object ScanActionHandler {
 
     private fun callPhone(context: Context, number: String) {
         try {
-            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$number"))
+            val intent = Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null))
             context.startActivity(intent)
         } catch (e: Exception) {
             toast(context, "Could not open dialer")
@@ -104,7 +107,7 @@ object ScanActionHandler {
             return
         }
 
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             try {
                 val builder = android.net.wifi.WifiNetworkSuggestion.Builder()
                     .setSsid(ssid)
@@ -142,7 +145,7 @@ object ScanActionHandler {
             }
         } else {
             copyToClipboard(context, password ?: ssid)
-            toast(context, "Wi-Fi auto-connect needs Android 10+. Password copied instead.")
+            toast(context, "Wi-Fi setup needs Android 11+. Network details copied instead.")
         }
     }
 
@@ -167,7 +170,8 @@ object ScanActionHandler {
         description: String?,
         location: String?,
         startTimeMillis: Long?,
-        endTimeMillis: Long?
+        endTimeMillis: Long?,
+        isAllDay: Boolean
     ) {
         val intent = Intent(Intent.ACTION_INSERT).apply {
             data = android.provider.CalendarContract.Events.CONTENT_URI
@@ -176,6 +180,7 @@ object ScanActionHandler {
             location?.let { putExtra(android.provider.CalendarContract.Events.EVENT_LOCATION, it) }
             startTimeMillis?.let { putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, it) }
             endTimeMillis?.let { putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, it) }
+            if (isAllDay) putExtra(android.provider.CalendarContract.EXTRA_EVENT_ALL_DAY, true)
         }
         try {
             context.startActivity(intent)

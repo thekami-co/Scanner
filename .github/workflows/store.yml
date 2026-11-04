@@ -202,3 +202,4 @@ jobs:
       - name: Clean up signing files
         if: always()
         run: rm -f app/release.keystore key.properties
+

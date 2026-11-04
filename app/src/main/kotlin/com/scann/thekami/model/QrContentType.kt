@@ -15,7 +15,9 @@ object QrContentEncoder {
     fun encodeText(text: String): String = text
 
     fun encodeUrl(url: String): String {
-        return if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        return if (!url.startsWith("http://", ignoreCase = true) &&
+            !url.startsWith("https://", ignoreCase = true)
+        ) {
             "https://$url"
         } else url
     }
