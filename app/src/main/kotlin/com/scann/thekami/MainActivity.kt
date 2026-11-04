@@ -25,6 +25,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
+import com.scann.thekami.ui.components.ThemeTransitionOverlay
+import com.scann.thekami.ui.components.rememberThemeTransitionState
+import com.scann.thekami.util.AppSettings
+import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -228,10 +233,25 @@ fun ScannApp(
     var lastResult by remember { mutableStateOf<ScanResult?>(null) }
     var backProgress by remember { mutableFloatStateOf(0f) }
     var settings by remember { mutableStateOf(AppPreferences.load(context)) }
+    val scope = rememberCoroutineScope()
+    val themeTransition = rememberThemeTransitionState()
 
     val systemAnimationsOff = rememberSystemAnimationsDisabled()
     val animationsEnabled = settings.animations && !systemAnimationsOff
     val navStyle = if (settings.floatingNav) NavBarStyle.FLOATING else NavBarStyle.DOCKED
+
+    fun applySettings(updated: AppSettings) {
+        settings = updated
+        AppPreferences.save(context, updated)
+    }
+
+    fun changeTheme(updated: AppSettings, origin: Offset) {
+        if (animationsEnabled) {
+            scope.launch { themeTransition.play(view, origin) { applySettings(updated) } }
+        } else {
+            applySettings(updated)
+        }
+    }
     val isDark = isSystemInDarkTheme()
     val onCamera = selectedTab == NavTab.SCAN && overlay is Overlay.None
     LaunchedEffect(selectedTab) { visitedTabs = visitedTabs + selectedTab }
@@ -274,6 +294,7 @@ fun ScannApp(
     // sits on a themed surface, so only a floating bar leaves the camera under the nav area.
     ScannTheme(
         dynamicColor = settings.dynamicColor,
+        appTheme = settings.theme,
         darkStatusBarIcons = !isDark && !onCamera,
         darkNavBarIcons = !isDark && !(onCamera && settings.floatingNav)
     ) {
@@ -289,7 +310,7 @@ fun ScannApp(
 
             Surface(modifier = Modifier.fillMaxSize()) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    // Keep CameraX bound while navigating so returning to Scan is instant.
+                    ThemeTransitionOverlay(themeTransition, Modifier.zIndex(10f))
                     TabLayer(visible = selectedTab == NavTab.SCAN, composed = selectedTab == NavTab.SCAN || NavTab.SCAN in visitedTabs) {
                         ScannerScreen(
                             isActive = selectedTab == NavTab.SCAN && overlay is Overlay.None,
@@ -306,10 +327,8 @@ fun ScannApp(
                         SettingsScreen(
                             onAboutClick = { overlay = Overlay.About },
                             settings = settings,
-                            onSettingsChange = { updated ->
-                                settings = updated
-                                AppPreferences.save(context, updated)
-                            }
+                            onSettingsChange = { applySettings(it) },
+                            onThemeChange = { updated, origin -> changeTheme(updated, origin) }
                         )
                     }
 

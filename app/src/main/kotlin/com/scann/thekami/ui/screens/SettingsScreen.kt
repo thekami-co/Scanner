@@ -10,6 +10,16 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import com.scann.thekami.ui.theme.AppTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
@@ -46,9 +56,11 @@ private val RowVerticalPadding = 14.dp
 fun SettingsScreen(
     onAboutClick: () -> Unit,
     settings: AppSettings,
-    onSettingsChange: (AppSettings) -> Unit
+    onSettingsChange: (AppSettings) -> Unit,
+    onThemeChange: (AppSettings, Offset) -> Unit
 ) {
     val context = LocalContext.current
+    val dynamicRowCenter = remember { CenterHolder() }
     var createNotificationEnabled by remember {
         mutableStateOf(NotificationController.isCreateNotificationEnabled(context))
     }
@@ -132,13 +144,20 @@ fun SettingsScreen(
             )
 
             SectionLabel("Appearance")
+            ThemeRow(
+                selected = if (settings.dynamicColor && AppPreferences.dynamicColorSupported) null else settings.theme,
+                onSelect = { theme, origin ->
+                    onThemeChange(settings.copy(theme = theme, dynamicColor = false), origin)
+                }
+            )
             if (AppPreferences.dynamicColorSupported) {
                 SwitchRow(
                     iconRes = R.drawable.hgi_palette,
                     title = "Dynamic colors",
                     subtitle = "Match the app to your wallpaper colors",
                     checked = settings.dynamicColor,
-                    onCheckedChange = { onSettingsChange(settings.copy(dynamicColor = it)) }
+                    onCheckedChange = { onThemeChange(settings.copy(dynamicColor = it), dynamicRowCenter.value) },
+                    modifier = Modifier.trackCenter(dynamicRowCenter)
                 )
             }
             SwitchRow(
@@ -293,12 +312,13 @@ private fun SwitchRow(
     title: String,
     subtitle: String,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val view = LocalView.current
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .toggleable(
                 value = checked,
@@ -335,5 +355,88 @@ private fun SocialIconButton(iconRes: Int, label: String, onClick: () -> Unit) {
                 modifier = Modifier.size(22.dp)
             )
         }
+    }
+}
+
+private class CenterHolder {
+    var value: Offset = Offset.Zero
+}
+
+private fun Modifier.trackCenter(holder: CenterHolder): Modifier =
+    onGloballyPositioned { holder.value = it.boundsInWindow().center }
+
+@Composable
+private fun ThemeRow(
+    selected: AppTheme?,
+    onSelect: (AppTheme, Offset) -> Unit
+) {
+    val dark = isSystemInDarkTheme()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = ScreenPadding, vertical = RowVerticalPadding)
+    ) {
+        Text(text = "Theme", style = MaterialTheme.typography.bodyLarge)
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            AppTheme.entries.forEach { theme ->
+                ThemeSwatch(theme, dark, theme == selected, onSelect)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeSwatch(
+    theme: AppTheme,
+    dark: Boolean,
+    selected: Boolean,
+    onSelect: (AppTheme, Offset) -> Unit
+) {
+    val scheme = remember(theme, dark) { theme.colorScheme(dark) }
+    val center = remember { CenterHolder() }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .trackCenter(center)
+            .selectable(
+                selected = selected,
+                role = Role.RadioButton,
+                onClick = { onSelect(theme, center.value) }
+            )
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .border(
+                    width = 2.dp,
+                    color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    shape = CircleShape
+                )
+                .padding(5.dp)
+                .clip(CircleShape)
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawArc(
+                    color = scheme.primary,
+                    startAngle = 90f,
+                    sweepAngle = 180f,
+                    useCenter = true
+                )
+                drawArc(
+                    color = scheme.primaryContainer,
+                    startAngle = 270f,
+                    sweepAngle = 180f,
+                    useCenter = true
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = theme.label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
