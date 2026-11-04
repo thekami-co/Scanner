@@ -20,6 +20,7 @@ sealed class ScanAction {
         val description: String?,
         val location: String?,
         val startTimeMillis: Long?,
-        val endTimeMillis: Long?
+        val endTimeMillis: Long?,
+        val isAllDay: Boolean = false
     ) : ScanAction()
 }

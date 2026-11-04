@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -30,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.scann.thekami.model.ScanAction
 import com.scann.thekami.model.ScanResult
+import com.scann.thekami.model.ScanResultType
 import com.scann.thekami.ui.components.BottomNavBar
 import com.scann.thekami.ui.components.LocalAnimationsEnabled
 import com.scann.thekami.ui.components.LocalNavBarStyle
@@ -55,7 +58,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        pendingDeepLinkTab = resolveDeepLinkTab(intent)
+        pendingDeepLinkTab = if (savedInstanceState == null) resolveDeepLinkTab(intent) else null
         setContent {
             ScannApp(
                 initialTab = pendingDeepLinkTab,
@@ -86,6 +89,127 @@ private sealed class Overlay {
     data class Result(val scanResult: ScanResult) : Overlay()
 }
 
+private val visitedTabsSaver = Saver<Set<NavTab>, String>(
+    save = { tabs -> tabs.joinToString(",") { it.name } },
+    restore = { names -> names.split(",").map(NavTab::valueOf).toSet() }
+)
+
+private val overlaySaver = Saver<Overlay, Bundle>(
+    save = { overlay ->
+        Bundle().apply {
+            when (overlay) {
+                Overlay.None -> putString("overlay", "none")
+                Overlay.About -> putString("overlay", "about")
+                is Overlay.Result -> {
+                    putString("overlay", "result")
+                    putString("raw", overlay.scanResult.rawValue)
+                    putString("format", overlay.scanResult.format)
+                    when (val type = overlay.scanResult.type) {
+                        is ScanResultType.Url -> {
+                            putString("type", "url")
+                            putString("value", type.value)
+                        }
+                        is ScanResultType.PlainText -> {
+                            putString("type", "text")
+                            putString("value", type.value)
+                        }
+                        is ScanResultType.Phone -> {
+                            putString("type", "phone")
+                            putString("value", type.value)
+                        }
+                        is ScanResultType.Email -> {
+                            putString("type", "email")
+                            putString("address", type.address)
+                            putString("subject", type.subject)
+                            putString("body", type.body)
+                        }
+                        is ScanResultType.Sms -> {
+                            putString("type", "sms")
+                            putString("phone", type.phoneNumber)
+                            putString("message", type.message)
+                        }
+                        is ScanResultType.Location -> {
+                            putString("type", "location")
+                            putDouble("latitude", type.latitude)
+                            putDouble("longitude", type.longitude)
+                        }
+                        is ScanResultType.WifiNetwork -> {
+                            putString("type", "wifi")
+                            putString("ssid", type.ssid)
+                            putString("password", type.password)
+                            putString("encryption", type.encryptionType)
+                        }
+                        is ScanResultType.Contact -> {
+                            putString("type", "contact")
+                            putString("name", type.name)
+                            putString("phone", type.phone)
+                            putString("email", type.email)
+                            putString("organization", type.organization)
+                        }
+                        is ScanResultType.CalendarEvent -> {
+                            putString("type", "calendar")
+                            putString("title", type.title)
+                            putString("description", type.description)
+                            putString("location", type.location)
+                            type.startTimeMillis?.let { putLong("start", it) }
+                            type.endTimeMillis?.let { putLong("end", it) }
+                            putBoolean("allDay", type.isAllDay)
+                        }
+                        is ScanResultType.Unknown -> {
+                            putString("type", "unknown")
+                            putString("value", type.raw)
+                        }
+                    }
+                }
+            }
+        }
+    },
+    restore = { saved ->
+        when (saved.getString("overlay")) {
+            "about" -> Overlay.About
+            "result" -> {
+                val type = when (saved.getString("type")) {
+                    "url" -> ScanResultType.Url(saved.getString("value").orEmpty())
+                    "text" -> ScanResultType.PlainText(saved.getString("value").orEmpty())
+                    "phone" -> ScanResultType.Phone(saved.getString("value").orEmpty())
+                    "email" -> ScanResultType.Email(
+                        saved.getString("address").orEmpty(),
+                        saved.getString("subject"),
+                        saved.getString("body")
+                    )
+                    "sms" -> ScanResultType.Sms(saved.getString("phone").orEmpty(), saved.getString("message"))
+                    "location" -> ScanResultType.Location(
+                        saved.getDouble("latitude"),
+                        saved.getDouble("longitude")
+                    )
+                    "wifi" -> ScanResultType.WifiNetwork(
+                        saved.getString("ssid").orEmpty(),
+                        saved.getString("password"),
+                        saved.getString("encryption")
+                    )
+                    "contact" -> ScanResultType.Contact(
+                        saved.getString("name"),
+                        saved.getString("phone"),
+                        saved.getString("email"),
+                        saved.getString("organization")
+                    )
+                    "calendar" -> ScanResultType.CalendarEvent(
+                        saved.getString("title"),
+                        saved.getString("description"),
+                        saved.getString("location"),
+                        saved.getLong("start").takeIf { saved.containsKey("start") },
+                        saved.getLong("end").takeIf { saved.containsKey("end") },
+                        saved.getBoolean("allDay")
+                    )
+                    else -> ScanResultType.Unknown(saved.getString("value").orEmpty())
+                }
+                Overlay.Result(ScanResult(type, saved.getString("raw").orEmpty(), saved.getString("format").orEmpty()))
+            }
+            else -> Overlay.None
+        }
+    }
+)
+
 private const val BackScaleDelta = 0.1f
 private const val BackCornerRadius = 28f
 
@@ -96,9 +220,11 @@ fun ScannApp(
 ) {
     val context = LocalContext.current
     val view = LocalView.current
-    var selectedTab by remember { mutableStateOf(initialTab ?: NavTab.SCAN) }
-    var visitedTabs by remember { mutableStateOf(setOf(initialTab ?: NavTab.SCAN)) }
-    var overlay by remember { mutableStateOf<Overlay>(Overlay.None) }
+    var selectedTab by rememberSaveable { mutableStateOf(initialTab ?: NavTab.SCAN) }
+    var visitedTabs by rememberSaveable(stateSaver = visitedTabsSaver) {
+        mutableStateOf(setOf(initialTab ?: NavTab.SCAN))
+    }
+    var overlay by rememberSaveable(stateSaver = overlaySaver) { mutableStateOf<Overlay>(Overlay.None) }
     var lastResult by remember { mutableStateOf<ScanResult?>(null) }
     var backProgress by remember { mutableFloatStateOf(0f) }
     var settings by remember { mutableStateOf(AppPreferences.load(context)) }
