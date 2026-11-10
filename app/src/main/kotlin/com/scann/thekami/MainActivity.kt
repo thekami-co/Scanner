@@ -39,6 +39,7 @@ import com.scann.thekami.ui.components.LocalNavBarStyle
 import com.scann.thekami.ui.components.NavBarStyle
 import com.scann.thekami.ui.components.NavTab
 import com.scann.thekami.ui.components.rememberSystemAnimationsDisabled
+import com.scann.thekami.ui.components.RatingPromptDialog
 import com.scann.thekami.ui.screens.AboutScreen
 import com.scann.thekami.ui.screens.GeneratorScreen
 import com.scann.thekami.ui.screens.ResultScreen
@@ -48,8 +49,10 @@ import com.scann.thekami.ui.theme.ScannTheme
 import com.scann.thekami.util.AppPreferences
 import com.scann.thekami.util.Haptics
 import com.scann.thekami.util.NotificationController
+import com.scann.thekami.util.ReviewHelper
 import com.scann.thekami.util.ScanActionHandler
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
 
@@ -228,6 +231,8 @@ fun ScannApp(
     var lastResult by remember { mutableStateOf<ScanResult?>(null) }
     var backProgress by remember { mutableFloatStateOf(0f) }
     var settings by remember { mutableStateOf(AppPreferences.load(context)) }
+    var showRatingPrompt by rememberSaveable { mutableStateOf(false) }
+    var previousOverlay by remember { mutableStateOf<Overlay>(Overlay.None) }
 
     val systemAnimationsOff = rememberSystemAnimationsDisabled()
     val animationsEnabled = settings.animations && !systemAnimationsOff
@@ -235,6 +240,17 @@ fun ScannApp(
     val isDark = isSystemInDarkTheme()
     val onCamera = selectedTab == NavTab.SCAN && overlay is Overlay.None
     LaunchedEffect(selectedTab) { visitedTabs = visitedTabs + selectedTab }
+    LaunchedEffect(Unit) { AppPreferences.recordAppOpen(context) }
+
+    // Offer a rating only right after the user closes a scan result, never mid-scan.
+    LaunchedEffect(overlay) {
+        val closedResult = previousOverlay is Overlay.Result && overlay is Overlay.None
+        previousOverlay = overlay
+        if (closedResult && AppPreferences.shouldShowRatingPrompt(context)) {
+            delay(600)
+            showRatingPrompt = true
+        }
+    }
 
     LaunchedEffect(initialTab) {
         if (initialTab != null) {
@@ -287,6 +303,23 @@ fun ScannApp(
                 }
             }
 
+            if (showRatingPrompt) {
+                RatingPromptDialog(
+                    onRate = { _ ->
+                        showRatingPrompt = false
+                        AppPreferences.onRatingPromptFinished(context)
+                        ReviewHelper.openPlayStoreListing(context)
+                    },
+                    onNotNow = {
+                        showRatingPrompt = false
+                        AppPreferences.onRatingPromptPostponed(context)
+                    },
+                    onNeverAsk = {
+                        showRatingPrompt = false
+                        AppPreferences.onRatingPromptFinished(context)
+                    }
+                )
+            }
             Surface(modifier = Modifier.fillMaxSize()) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     // Keep CameraX bound while navigating so returning to Scan is instant.
@@ -295,6 +328,7 @@ fun ScannApp(
                             isActive = selectedTab == NavTab.SCAN && overlay is Overlay.None,
                             modifier = Modifier.fillMaxSize(),
                             onBarcodeScanned = { result ->
+                                AppPreferences.recordSuccessfulScan(context)
                                 overlay = Overlay.Result(result)
                             }
                         )

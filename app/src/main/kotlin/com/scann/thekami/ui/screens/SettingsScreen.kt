@@ -1,7 +1,6 @@
 package com.scann.thekami.ui.screens
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -29,7 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
-import com.google.android.play.core.review.ReviewManagerFactory
+import com.scann.thekami.util.ReviewHelper
 import com.scann.thekami.BuildConfig
 import com.scann.thekami.R
 import com.scann.thekami.ui.components.bottomNavClearance
@@ -69,29 +68,8 @@ fun SettingsScreen(
         }
     }
 
-    fun openPlayStoreListing() {
-        openUrl("https://play.google.com/store/apps/details?id=${context.packageName}")
-    }
-
     fun launchInAppReview() {
-        try {
-            val activity = context as? Activity
-            if (activity == null) {
-                openPlayStoreListing()
-                return
-            }
-            val reviewManager = ReviewManagerFactory.create(context)
-            val request = reviewManager.requestReviewFlow()
-            request.addOnCompleteListener { task ->
-                if (task.isSuccessful) {
-                    reviewManager.launchReviewFlow(activity, task.result)
-                } else {
-                    openPlayStoreListing()
-                }
-            }
-        } catch (e: Exception) {
-            openPlayStoreListing()
-        }
+        ReviewHelper.launchInAppReview(context)
     }
 
     fun onNotificationToggle(checked: Boolean) {
