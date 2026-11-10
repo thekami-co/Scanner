@@ -44,6 +44,7 @@ import com.scann.thekami.ui.components.NavTab
 import com.scann.thekami.ui.components.rememberSystemAnimationsDisabled
 import com.scann.thekami.ui.components.RatingPromptDialog
 import com.scann.thekami.ui.screens.AboutScreen
+import com.scann.thekami.ui.screens.ThemeScreen
 import com.scann.thekami.ui.screens.GeneratorScreen
 import com.scann.thekami.ui.screens.ResultScreen
 import com.scann.thekami.ui.screens.ScannerScreen
@@ -92,6 +93,7 @@ class MainActivity : ComponentActivity() {
 private sealed class Overlay {
     object None : Overlay()
     object About : Overlay()
+    object Theme : Overlay()
     data class Result(val scanResult: ScanResult) : Overlay()
 }
 
@@ -106,6 +108,7 @@ private val overlaySaver = Saver<Overlay, Bundle>(
             when (overlay) {
                 Overlay.None -> putString("overlay", "none")
                 Overlay.About -> putString("overlay", "about")
+                Overlay.Theme -> putString("overlay", "theme")
                 is Overlay.Result -> {
                     putString("overlay", "result")
                     putString("raw", overlay.scanResult.rawValue)
@@ -173,6 +176,7 @@ private val overlaySaver = Saver<Overlay, Bundle>(
     restore = { saved ->
         when (saved.getString("overlay")) {
             "about" -> Overlay.About
+            "theme" -> Overlay.Theme
             "result" -> {
                 val type = when (saved.getString("type")) {
                     "url" -> ScanResultType.Url(saved.getString("value").orEmpty())
@@ -247,7 +251,6 @@ fun ScannApp(
         AppPreferences.save(context, updated)
     }
 
-    fun changeTheme(updated: AppSettings) = applySettings(updated)
     val isDark = isSystemInDarkTheme()
     val onCamera = selectedTab == NavTab.SCAN && overlay is Overlay.None
     LaunchedEffect(selectedTab) { visitedTabs = visitedTabs + selectedTab }
@@ -352,7 +355,7 @@ fun ScannApp(
                             onAboutClick = { overlay = Overlay.About },
                             settings = settings,
                             onSettingsChange = { applySettings(it) },
-                            onThemeChange = { updated, _ -> changeTheme(updated) }
+                            onThemeClick = { overlay = Overlay.Theme }
                         )
                     }
 
@@ -408,6 +411,23 @@ fun ScannApp(
                     ) {
                         OverlayLayer(backProgress = { backProgress }) {
                             AboutScreen(onBack = { overlay = Overlay.None })
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = overlay is Overlay.Theme,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(2f),
+                        enter = overlayEnter,
+                        exit = overlayExit
+                    ) {
+                        OverlayLayer(backProgress = { backProgress }) {
+                            ThemeScreen(
+                                settings = settings,
+                                onSettingsChange = { applySettings(it) },
+                                onBack = { overlay = Overlay.None }
+                            )
                         }
                     }
                 }

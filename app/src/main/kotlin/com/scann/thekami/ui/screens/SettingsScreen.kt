@@ -12,6 +12,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.IconButton
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -56,10 +60,9 @@ fun SettingsScreen(
     onAboutClick: () -> Unit,
     settings: AppSettings,
     onSettingsChange: (AppSettings) -> Unit,
-    onThemeChange: (AppSettings, Offset) -> Unit
+    onThemeClick: () -> Unit
 ) {
     val context = LocalContext.current
-    val dynamicRowCenter = remember { CenterHolder() }
     var createNotificationEnabled by remember {
         mutableStateOf(NotificationController.isCreateNotificationEnabled(context))
     }
@@ -122,22 +125,12 @@ fun SettingsScreen(
             )
 
             SectionLabel("Appearance")
-            ThemeRow(
-                selected = if (settings.dynamicColor && AppPreferences.dynamicColorSupported) null else settings.theme,
-                onSelect = { theme, origin ->
-                    onThemeChange(settings.copy(theme = theme, dynamicColor = false), origin)
-                }
+            SettingsRow(
+                iconRes = R.drawable.hgi_palette,
+                title = "Theme",
+                subtitle = if (settings.dynamicColor && AppPreferences.dynamicColorSupported) "Dynamic colors" else settings.theme.label,
+                onClick = onThemeClick
             )
-            if (AppPreferences.dynamicColorSupported) {
-                SwitchRow(
-                    iconRes = R.drawable.hgi_palette,
-                    title = "Dynamic colors",
-                    subtitle = "Match the app to your wallpaper colors",
-                    checked = settings.dynamicColor,
-                    onCheckedChange = { onThemeChange(settings.copy(dynamicColor = it), dynamicRowCenter.value) },
-                    modifier = Modifier.trackCenter(dynamicRowCenter)
-                )
-            }
             SwitchRow(
                 iconRes = R.drawable.hgi_nav_bar,
                 title = "Floating navigation bar",
@@ -336,17 +329,10 @@ private fun SocialIconButton(iconRes: Int, label: String, onClick: () -> Unit) {
     }
 }
 
-private class CenterHolder {
-    var value: Offset = Offset.Zero
-}
-
-private fun Modifier.trackCenter(holder: CenterHolder): Modifier =
-    onGloballyPositioned { holder.value = it.boundsInWindow().center }
-
 @Composable
 private fun ThemeRow(
     selected: AppTheme?,
-    onSelect: (AppTheme, Offset) -> Unit
+    onSelect: (AppTheme) -> Unit
 ) {
     val dark = isSystemInDarkTheme()
     Column(
@@ -369,19 +355,17 @@ private fun ThemeSwatch(
     theme: AppTheme,
     dark: Boolean,
     selected: Boolean,
-    onSelect: (AppTheme, Offset) -> Unit
+    onSelect: (AppTheme) -> Unit
 ) {
     val scheme = remember(theme, dark) { theme.colorScheme(dark) }
-    val center = remember { CenterHolder() }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .trackCenter(center)
             .selectable(
                 selected = selected,
                 role = Role.RadioButton,
-                onClick = { onSelect(theme, center.value) }
+                onClick = { onSelect(theme) }
             )
     ) {
         Box(
@@ -416,5 +400,44 @@ private fun ThemeSwatch(
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+@Composable
+fun ThemeScreen(
+    settings: AppSettings,
+    onSettingsChange: (AppSettings) -> Unit,
+    onBack: () -> Unit
+) {
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .verticalScroll(rememberScrollState())
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(painter = painterResource(id = R.drawable.hgi_back), contentDescription = "Back")
+                }
+                Text(text = "Theme", style = MaterialTheme.typography.titleLarge)
+            }
+            ThemeRow(
+                selected = if (settings.dynamicColor && AppPreferences.dynamicColorSupported) null else settings.theme,
+                onSelect = { onSettingsChange(settings.copy(theme = it, dynamicColor = false)) }
+            )
+            if (AppPreferences.dynamicColorSupported) {
+                SwitchRow(
+                    iconRes = R.drawable.hgi_palette,
+                    title = "Dynamic colors",
+                    subtitle = "Match the app to your wallpaper colors",
+                    checked = settings.dynamicColor,
+                    onCheckedChange = { onSettingsChange(settings.copy(dynamicColor = it)) }
+                )
+            }
+        }
     }
 }
