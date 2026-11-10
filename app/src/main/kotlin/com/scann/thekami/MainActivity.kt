@@ -236,13 +236,10 @@ fun ScannApp(
     var lastResult by remember { mutableStateOf<ScanResult?>(null) }
     var backProgress by remember { mutableFloatStateOf(0f) }
     var settings by remember { mutableStateOf(AppPreferences.load(context)) }
-<<<<<<< HEAD
     val scope = rememberCoroutineScope()
     val themeTransition = rememberThemeTransitionState()
-=======
     var showRatingPrompt by rememberSaveable { mutableStateOf(false) }
     var previousOverlay by remember { mutableStateOf<Overlay>(Overlay.None) }
->>>>>>> feature/rating-prompt
 
     val systemAnimationsOff = rememberSystemAnimationsDisabled()
     val animationsEnabled = settings.animations && !systemAnimationsOff
