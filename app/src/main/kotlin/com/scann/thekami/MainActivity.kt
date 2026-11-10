@@ -25,6 +25,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
+import com.scann.thekami.util.AppSettings
+import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -39,7 +42,9 @@ import com.scann.thekami.ui.components.LocalNavBarStyle
 import com.scann.thekami.ui.components.NavBarStyle
 import com.scann.thekami.ui.components.NavTab
 import com.scann.thekami.ui.components.rememberSystemAnimationsDisabled
+import com.scann.thekami.ui.components.RatingPromptDialog
 import com.scann.thekami.ui.screens.AboutScreen
+import com.scann.thekami.ui.screens.ThemeScreen
 import com.scann.thekami.ui.screens.GeneratorScreen
 import com.scann.thekami.ui.screens.ResultScreen
 import com.scann.thekami.ui.screens.ScannerScreen
@@ -48,8 +53,10 @@ import com.scann.thekami.ui.theme.ScannTheme
 import com.scann.thekami.util.AppPreferences
 import com.scann.thekami.util.Haptics
 import com.scann.thekami.util.NotificationController
+import com.scann.thekami.util.ReviewHelper
 import com.scann.thekami.util.ScanActionHandler
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
 
@@ -86,6 +93,7 @@ class MainActivity : ComponentActivity() {
 private sealed class Overlay {
     object None : Overlay()
     object About : Overlay()
+    object Theme : Overlay()
     data class Result(val scanResult: ScanResult) : Overlay()
 }
 
@@ -100,6 +108,7 @@ private val overlaySaver = Saver<Overlay, Bundle>(
             when (overlay) {
                 Overlay.None -> putString("overlay", "none")
                 Overlay.About -> putString("overlay", "about")
+                Overlay.Theme -> putString("overlay", "theme")
                 is Overlay.Result -> {
                     putString("overlay", "result")
                     putString("raw", overlay.scanResult.rawValue)
@@ -167,6 +176,7 @@ private val overlaySaver = Saver<Overlay, Bundle>(
     restore = { saved ->
         when (saved.getString("overlay")) {
             "about" -> Overlay.About
+            "theme" -> Overlay.Theme
             "result" -> {
                 val type = when (saved.getString("type")) {
                     "url" -> ScanResultType.Url(saved.getString("value").orEmpty())
@@ -228,13 +238,33 @@ fun ScannApp(
     var lastResult by remember { mutableStateOf<ScanResult?>(null) }
     var backProgress by remember { mutableFloatStateOf(0f) }
     var settings by remember { mutableStateOf(AppPreferences.load(context)) }
+    val scope = rememberCoroutineScope()
+    var showRatingPrompt by rememberSaveable { mutableStateOf(false) }
+    var previousOverlay by remember { mutableStateOf<Overlay>(Overlay.None) }
 
     val systemAnimationsOff = rememberSystemAnimationsDisabled()
     val animationsEnabled = settings.animations && !systemAnimationsOff
     val navStyle = if (settings.floatingNav) NavBarStyle.FLOATING else NavBarStyle.DOCKED
+
+    fun applySettings(updated: AppSettings) {
+        settings = updated
+        AppPreferences.save(context, updated)
+    }
+
     val isDark = isSystemInDarkTheme()
     val onCamera = selectedTab == NavTab.SCAN && overlay is Overlay.None
     LaunchedEffect(selectedTab) { visitedTabs = visitedTabs + selectedTab }
+    LaunchedEffect(Unit) { AppPreferences.recordAppOpen(context) }
+
+    // Offer a rating only right after the user closes a scan result, never mid-scan.
+    LaunchedEffect(overlay) {
+        val closedResult = previousOverlay is Overlay.Result && overlay is Overlay.None
+        previousOverlay = overlay
+        if (closedResult && AppPreferences.shouldShowRatingPrompt(context)) {
+            delay(600)
+            showRatingPrompt = true
+        }
+    }
 
     LaunchedEffect(initialTab) {
         if (initialTab != null) {
@@ -274,6 +304,7 @@ fun ScannApp(
     // sits on a themed surface, so only a floating bar leaves the camera under the nav area.
     ScannTheme(
         dynamicColor = settings.dynamicColor,
+        appTheme = settings.theme,
         darkStatusBarIcons = !isDark && !onCamera,
         darkNavBarIcons = !isDark && !(onCamera && settings.floatingNav)
     ) {
@@ -287,14 +318,31 @@ fun ScannApp(
                 }
             }
 
+            if (showRatingPrompt) {
+                RatingPromptDialog(
+                    onRate = { _ ->
+                        showRatingPrompt = false
+                        AppPreferences.onRatingPromptFinished(context)
+                        ReviewHelper.openPlayStoreListing(context)
+                    },
+                    onNotNow = {
+                        showRatingPrompt = false
+                        AppPreferences.onRatingPromptPostponed(context)
+                    },
+                    onNeverAsk = {
+                        showRatingPrompt = false
+                        AppPreferences.onRatingPromptFinished(context)
+                    }
+                )
+            }
             Surface(modifier = Modifier.fillMaxSize()) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    // Keep CameraX bound while navigating so returning to Scan is instant.
                     TabLayer(visible = selectedTab == NavTab.SCAN, composed = selectedTab == NavTab.SCAN || NavTab.SCAN in visitedTabs) {
                         ScannerScreen(
                             isActive = selectedTab == NavTab.SCAN && overlay is Overlay.None,
                             modifier = Modifier.fillMaxSize(),
                             onBarcodeScanned = { result ->
+                                AppPreferences.recordSuccessfulScan(context)
                                 overlay = Overlay.Result(result)
                             }
                         )
@@ -306,10 +354,8 @@ fun ScannApp(
                         SettingsScreen(
                             onAboutClick = { overlay = Overlay.About },
                             settings = settings,
-                            onSettingsChange = { updated ->
-                                settings = updated
-                                AppPreferences.save(context, updated)
-                            }
+                            onSettingsChange = { applySettings(it) },
+                            onThemeClick = { overlay = Overlay.Theme }
                         )
                     }
 
@@ -365,6 +411,23 @@ fun ScannApp(
                     ) {
                         OverlayLayer(backProgress = { backProgress }) {
                             AboutScreen(onBack = { overlay = Overlay.None })
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = overlay is Overlay.Theme,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .zIndex(2f),
+                        enter = overlayEnter,
+                        exit = overlayExit
+                    ) {
+                        OverlayLayer(backProgress = { backProgress }) {
+                            ThemeScreen(
+                                settings = settings,
+                                onSettingsChange = { applySettings(it) },
+                                onBack = { overlay = Overlay.None }
+                            )
                         }
                     }
                 }
