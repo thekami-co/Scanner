@@ -26,8 +26,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
-import com.scann.thekami.ui.components.ThemeTransitionOverlay
-import com.scann.thekami.ui.components.rememberThemeTransitionState
 import com.scann.thekami.util.AppSettings
 import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalContext
@@ -237,7 +235,6 @@ fun ScannApp(
     var backProgress by remember { mutableFloatStateOf(0f) }
     var settings by remember { mutableStateOf(AppPreferences.load(context)) }
     val scope = rememberCoroutineScope()
-    val themeTransition = rememberThemeTransitionState()
     var showRatingPrompt by rememberSaveable { mutableStateOf(false) }
     var previousOverlay by remember { mutableStateOf<Overlay>(Overlay.None) }
 
@@ -250,13 +247,7 @@ fun ScannApp(
         AppPreferences.save(context, updated)
     }
 
-    fun changeTheme(updated: AppSettings, origin: Offset) {
-        if (animationsEnabled) {
-            scope.launch { themeTransition.play(view, origin) { applySettings(updated) } }
-        } else {
-            applySettings(updated)
-        }
-    }
+    fun changeTheme(updated: AppSettings) = applySettings(updated)
     val isDark = isSystemInDarkTheme()
     val onCamera = selectedTab == NavTab.SCAN && overlay is Overlay.None
     LaunchedEffect(selectedTab) { visitedTabs = visitedTabs + selectedTab }
@@ -343,7 +334,6 @@ fun ScannApp(
             }
             Surface(modifier = Modifier.fillMaxSize()) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    ThemeTransitionOverlay(themeTransition, Modifier.zIndex(10f))
                     TabLayer(visible = selectedTab == NavTab.SCAN, composed = selectedTab == NavTab.SCAN || NavTab.SCAN in visitedTabs) {
                         ScannerScreen(
                             isActive = selectedTab == NavTab.SCAN && overlay is Overlay.None,
@@ -362,7 +352,7 @@ fun ScannApp(
                             onAboutClick = { overlay = Overlay.About },
                             settings = settings,
                             onSettingsChange = { applySettings(it) },
-                            onThemeChange = { updated, origin -> changeTheme(updated, origin) }
+                            onThemeChange = { updated, _ -> changeTheme(updated) }
                         )
                     }
 
