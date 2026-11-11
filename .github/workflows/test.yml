@@ -28,6 +28,8 @@ jobs:
         run: ./gradlew testDebugUnitTest
       - name: Build debug APK
         run: ./gradlew assembleDebug
+      - name: Build release (R8 check, unsigned)
+        run: ./gradlew assembleRelease
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:

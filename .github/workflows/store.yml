@@ -170,6 +170,23 @@ jobs:
           echo "Verified artifacts:"
           ls -lh "$APK_NAME" "$AAB_NAME"
 
+      - name: Verify AdMob IDs inside release APK
+        env:
+          APK_NAME: ${{ steps.ver.outputs.apk_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BT/aapt2" dump xmltree --file AndroidManifest.xml "$APK_NAME" > "$RUNNER_TEMP/manifest.txt"
+          grep -q "4015145068033513~7229239399" "$RUNNER_TEMP/manifest.txt" \
+            || { echo "::error::Real AdMob App ID missing in manifest"; exit 1; }
+          unzip -p "$APK_NAME" 'classes*.dex' > "$RUNNER_TEMP/dex.bin"
+          for id in 5159353444 6329624024; do
+            grep -aq "$id" "$RUNNER_TEMP/dex.bin" \
+              || { echo "::error::Ad unit $id not found in dex"; exit 1; }
+          done
+          echo "AdMob IDs verified"
+
       - name: Create GitHub Release (APK + AAB)
         env:
           GH_TOKEN: ${{ github.token }}
