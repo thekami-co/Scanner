@@ -1,6 +1,7 @@
 package com.scann.thekami.ui.screens
 
-import android.app.Activity\nimport android.Manifest
+import android.app.Activity
+import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -42,7 +43,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
-import com.scann.thekami.util.AdManager\nimport com.scann.thekami.util.ReviewHelper
+import com.scann.thekami.util.AdManager
+import com.scann.thekami.util.ReviewHelper
 import com.scann.thekami.BuildConfig
 import com.scann.thekami.R
 import com.scann.thekami.ui.components.bottomNavClearance
