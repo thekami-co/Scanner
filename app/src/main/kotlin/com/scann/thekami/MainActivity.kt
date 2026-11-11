@@ -1,6 +1,7 @@
 package com.scann.thekami
 
 import android.content.Intent
+import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.PredictiveBackHandler
@@ -50,6 +51,7 @@ import com.scann.thekami.ui.screens.ResultScreen
 import com.scann.thekami.ui.screens.ScannerScreen
 import com.scann.thekami.ui.screens.SettingsScreen
 import com.scann.thekami.ui.theme.ScannTheme
+import com.scann.thekami.util.AdManager
 import com.scann.thekami.util.AppPreferences
 import com.scann.thekami.util.Haptics
 import com.scann.thekami.util.NotificationController
@@ -65,6 +67,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (savedInstanceState == null) AdManager.start(this)
         pendingDeepLinkTab = if (savedInstanceState == null) resolveDeepLinkTab(intent) else null
         setContent {
             ScannApp(
@@ -260,9 +263,13 @@ fun ScannApp(
     LaunchedEffect(overlay) {
         val closedResult = previousOverlay is Overlay.Result && overlay is Overlay.None
         previousOverlay = overlay
-        if (closedResult && AppPreferences.shouldShowRatingPrompt(context)) {
-            delay(600)
-            showRatingPrompt = true
+        if (closedResult) {
+            (context as? Activity)?.let { AdManager.onScanResultClosed(it) }
+            // Never stack the rating prompt on top of an ad.
+            if (!AdManager.adShownThisSession && AppPreferences.shouldShowRatingPrompt(context)) {
+                delay(600)
+                showRatingPrompt = true
+            }
         }
     }
 
