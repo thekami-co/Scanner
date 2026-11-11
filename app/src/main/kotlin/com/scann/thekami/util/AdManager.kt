@@ -37,7 +37,7 @@ object AdManager {
     private const val AD_GAP_MS = 3L * 60 * 1000
     private const val APP_OPEN_VS_SCAN_GAP_MS = 2L * 60 * 1000
     private const val SCANS_PER_AD = 3
-    private const val APP_OPEN_MAX_WAIT_MS = 5_000L
+    private const val APP_OPEN_MAX_WAIT_MS = 8_000L
     private const val INTERSTITIAL_TTL_MS = 50L * 60 * 1000
 
     private val adsInitialized = AtomicBoolean(false)
@@ -111,17 +111,18 @@ object AdManager {
             return
         }
 
+        val loadStart = SystemClock.elapsedRealtime()
         AppOpenAd.load(
             app,
             BuildConfig.ADMOB_APP_OPEN_ID,
             AdRequest.Builder().build(),
             object : AppOpenAd.AppOpenAdLoadCallback() {
                 override fun onAdLoaded(ad: AppOpenAd) {
-                    val tooLate = SystemClock.elapsedRealtime() - appStartElapsed > APP_OPEN_MAX_WAIT_MS
+                    val tooLate = SystemClock.elapsedRealtime() - loadStart > APP_OPEN_MAX_WAIT_MS
                     val visible = (activity as? LifecycleOwner)?.lifecycle?.currentState
                         ?.isAtLeast(Lifecycle.State.STARTED) == true
                     if (tooLate || !visible || activity.isFinishing || adShowing) {
-                        note(app, "app open skipped: late=$tooLate visible=$visible")
+                        note(app, "app open skipped: late=$tooLate waited=${SystemClock.elapsedRealtime() - loadStart}ms visible=$visible")
                         return
                     }
                     ad.fullScreenContentCallback = object : FullScreenContentCallback() {
