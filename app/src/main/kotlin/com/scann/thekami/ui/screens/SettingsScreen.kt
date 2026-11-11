@@ -1,5 +1,6 @@
 package com.scann.thekami.ui.screens
 
+import android.app.Activity
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -42,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
+import com.scann.thekami.util.AdManager
 import com.scann.thekami.util.ReviewHelper
 import com.scann.thekami.BuildConfig
 import com.scann.thekami.R
@@ -165,6 +167,15 @@ fun SettingsScreen(
                 subtitle = "How we handle your data",
                 onClick = { openUrl("https://blog.thekami.tech/posts/scann/") }
             )
+
+            if (AdManager.privacyOptionsRequired(context)) {
+                SettingsRow(
+                    iconRes = R.drawable.hgi_privacy,
+                    title = "Ad privacy settings",
+                    subtitle = "Change your ad consent choices",
+                    onClick = { (context as? Activity)?.let { AdManager.showPrivacyOptions(it) } }
+                )
+            }
 
             SectionLabel("Follow us")
             Row(
