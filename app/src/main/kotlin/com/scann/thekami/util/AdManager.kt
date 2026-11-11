@@ -33,14 +33,13 @@ object AdManager {
     private const val KEY_LAST_ANY_AD = "last_any_ad"
     private const val KEY_SCAN_COUNTER = "scans_since_ad"
 
-    private const val APP_OPEN_GAP_MS = 2L * 60 * 60 * 1000
+    private val APP_OPEN_GAP_MS = if (BuildConfig.DEBUG) 30_000L else 2L * 60 * 60 * 1000
     private const val AD_GAP_MS = 3L * 60 * 1000
     private const val APP_OPEN_VS_SCAN_GAP_MS = 2L * 60 * 1000
     private const val SCANS_PER_AD = 3
     private const val APP_OPEN_MAX_WAIT_MS = 5_000L
     private const val INTERSTITIAL_TTL_MS = 50L * 60 * 1000
 
-    private val started = AtomicBoolean(false)
     private val adsInitialized = AtomicBoolean(false)
     private var appStartElapsed = 0L
 
@@ -56,14 +55,22 @@ object AdManager {
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    private fun note(app: Context, msg: String) {
+        Log.d(TAG, msg)
+        if (BuildConfig.DEBUG) android.widget.Toast.makeText(app, "ads: $msg", android.widget.Toast.LENGTH_SHORT).show()
+    }
+
     private fun within(last: Long, now: Long, gap: Long) = last in 1..now && now - last < gap
 
     // ---------------------------------------------------------------- start
 
     /** Call once from MainActivity.onCreate on a fresh launch (not on recreation). */
     fun start(activity: Activity) {
-        if (!started.compareAndSet(false, true)) return
         appStartElapsed = SystemClock.elapsedRealtime()
+        if (adsInitialized.get()) {
+            maybeShowAppOpen(activity, activity.applicationContext)
+            return
+        }
 
         val consent = UserMessagingPlatform.getConsentInformation(activity)
         consent.requestConsentInfoUpdate(
@@ -99,7 +106,10 @@ object AdManager {
 
     private fun maybeShowAppOpen(activity: Activity, app: Context) {
         val now = System.currentTimeMillis()
-        if (within(prefs(app).getLong(KEY_LAST_APP_OPEN, 0L), now, APP_OPEN_GAP_MS)) return
+        if (within(prefs(app).getLong(KEY_LAST_APP_OPEN, 0L), now, APP_OPEN_GAP_MS)) {
+            note(app, "app open skipped: gap")
+            return
+        }
 
         AppOpenAd.load(
             app,
@@ -110,7 +120,10 @@ object AdManager {
                     val tooLate = SystemClock.elapsedRealtime() - appStartElapsed > APP_OPEN_MAX_WAIT_MS
                     val visible = (activity as? LifecycleOwner)?.lifecycle?.currentState
                         ?.isAtLeast(Lifecycle.State.STARTED) == true
-                    if (tooLate || !visible || activity.isFinishing || adShowing) return
+                    if (tooLate || !visible || activity.isFinishing || adShowing) {
+                        note(app, "app open skipped: late=$tooLate visible=$visible")
+                        return
+                    }
                     ad.fullScreenContentCallback = object : FullScreenContentCallback() {
                         override fun onAdShowedFullScreenContent() {
                             val t = System.currentTimeMillis()
@@ -128,7 +141,7 @@ object AdManager {
                 }
 
                 override fun onAdFailedToLoad(error: LoadAdError) {
-                    Log.w(TAG, "App open load failed: ${error.message}")
+                    note(app, "app open load failed: ${error.code} ${error.message}")
                 }
             }
         )
