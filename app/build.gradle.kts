@@ -51,8 +51,16 @@ android {
     }
 
     buildTypes {
+        debug {
+            manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
+            buildConfigField("String", "ADMOB_APP_OPEN_ID", "\"ca-app-pub-3940256099942544/9257395921\"")
+            buildConfigField("String", "ADMOB_INTERSTITIAL_ID", "\"ca-app-pub-3940256099942544/1033173712\"")
+        }
         release {
             isMinifyEnabled = true
+            manifestPlaceholders["admobAppId"] = "ca-app-pub-XXXX~YYYY"
+            buildConfigField("String", "ADMOB_APP_OPEN_ID", "\"ca-app-pub-XXXX/AAAA\"")
+            buildConfigField("String", "ADMOB_INTERSTITIAL_ID", "\"ca-app-pub-XXXX/BBBB\"")
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -114,6 +122,7 @@ dependencies {
     implementation("androidx.cardview:cardview:1.0.0")
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.google.android.play:review-ktx:2.0.2")
+    implementation("com.google.android.gms:play-services-ads:25.4.0")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
