@@ -14,6 +14,7 @@ import com.google.android.gms.ads.MobileAds
 import com.google.android.gms.ads.appopen.AppOpenAd
 import com.google.android.gms.ads.interstitial.InterstitialAd
 import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
+import com.google.android.ump.ConsentInformation
 import com.google.android.ump.ConsentRequestParameters
 import com.google.android.ump.UserMessagingPlatform
 import com.scann.thekami.BuildConfig
@@ -98,6 +99,23 @@ object AdManager {
             activity.runOnUiThread {
                 loadInterstitial(app)
                 maybeShowAppOpen(activity, app)
+            }
+        }
+    }
+
+    // ------------------------------------------------------- privacy options
+
+    /** True only for users who must be able to change their ad consent (EEA/UK). */
+    fun privacyOptionsRequired(context: Context): Boolean =
+        UserMessagingPlatform.getConsentInformation(context).privacyOptionsRequirementStatus ==
+            ConsentInformation.PrivacyOptionsRequirementStatus.REQUIRED
+
+    fun showPrivacyOptions(activity: Activity) {
+        UserMessagingPlatform.showPrivacyOptionsForm(activity) { error ->
+            if (error != null) {
+                Log.w(TAG, "Privacy options: ${error.message}")
+            } else if (UserMessagingPlatform.getConsentInformation(activity).canRequestAds()) {
+                initAds(activity)
             }
         }
     }
