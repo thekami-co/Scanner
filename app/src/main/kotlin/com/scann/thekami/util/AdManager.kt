@@ -38,8 +38,8 @@ object AdManager {
     private val APP_OPEN_GAP_MS = if (BuildConfig.DEBUG) 30_000L else 60L * 60 * 1000
     private const val AD_GAP_MS = 3L * 60 * 1000
     private const val APP_OPEN_VS_SCAN_GAP_MS = 2L * 60 * 1000
-    private const val SCANS_PER_AD = 3
-    private const val GENS_PER_AD = 2
+    private const val SCANS_PER_AD = 2
+    private const val GENS_PER_AD = 1
     private const val APP_OPEN_MAX_WAIT_MS = 8_000L
     private const val INTERSTITIAL_TTL_MS = 50L * 60 * 1000
 
@@ -224,8 +224,6 @@ object AdManager {
             return
         }
         val now = System.currentTimeMillis()
-        if (within(p.getLong(KEY_LAST_ANY_AD, 0L), now, AD_GAP_MS)) return
-        if (within(p.getLong(KEY_LAST_APP_OPEN, 0L), now, APP_OPEN_VS_SCAN_GAP_MS)) return
         if (activity.isFinishing || adShowing) return
 
         ad.fullScreenContentCallback = object : FullScreenContentCallback() {
