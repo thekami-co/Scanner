@@ -31,7 +31,7 @@ You can also create your own QR codes, scan from a gallery image, and start scan
 | License | GPL-3.0, open source |
 | Package | `com.scann.thekami` |
 | Account | Not needed |
-| Ads | None |
+| Ads | Full-screen ads (app open and interstitial) |
 | Your scans | Processed on your device |
 
 ## How it works
@@ -50,6 +50,7 @@ You can also create your own QR codes, scan from a gallery image, and start scan
 - Quick Settings tiles for Scan and Create
 - App shortcuts from the launcher icon
 - Works offline
+- Free, supported by occasional full-screen ads
 - Material 3 interface built with Jetpack Compose
 
 ## Technical info
@@ -61,6 +62,7 @@ You can also create your own QR codes, scan from a gallery image, and start scan
 | Scanning | [ML Kit Barcode Scanning](https://developers.google.com/ml-kit/vision/barcode-scanning) |
 | Generating | [ZXing](https://github.com/zxing/zxing) core |
 | Images | [Coil](https://coil-kt.github.io/coil/) |
+| Ads | Google AdMob, Google User Messaging Platform (consent) |
 | Min / target SDK | 24 / 36 |
 | CI/CD | GitHub Actions: signed APK builds, GitHub Releases, Play Store publishing |
 
@@ -106,7 +108,7 @@ Issues and pull requests are welcome.
 
 ## Privacy
 
-Scanning and generating happen on your device, and scanned content is not uploaded by the app. The app shows no ads.
+Scanning and generating happen on your device, and scanned content is not uploaded by the app. The app shows full-screen ads through Google AdMob. In the EEA and UK a consent form is shown first, and you can change your choice later in Settings. Google may use the advertising ID to serve ads, see [Google's privacy policy](https://policies.google.com/privacy).
 
 ## Community
 
