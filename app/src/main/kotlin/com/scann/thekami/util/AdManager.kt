@@ -33,11 +33,13 @@ object AdManager {
     private const val KEY_LAST_APP_OPEN = "last_app_open_ad"
     private const val KEY_LAST_ANY_AD = "last_any_ad"
     private const val KEY_SCAN_COUNTER = "scans_since_ad"
+    private const val KEY_GEN_COUNTER = "gens_since_ad"
 
-    private val APP_OPEN_GAP_MS = if (BuildConfig.DEBUG) 30_000L else 2L * 60 * 60 * 1000
+    private val APP_OPEN_GAP_MS = if (BuildConfig.DEBUG) 30_000L else 60L * 60 * 1000
     private const val AD_GAP_MS = 3L * 60 * 1000
     private const val APP_OPEN_VS_SCAN_GAP_MS = 2L * 60 * 1000
-    private const val SCANS_PER_AD = 3
+    private const val SCANS_PER_AD = 2
+    private const val GENS_PER_AD = 1
     private const val APP_OPEN_MAX_WAIT_MS = 8_000L
     private const val INTERSTITIAL_TTL_MS = 50L * 60 * 1000
 
@@ -200,14 +202,21 @@ object AdManager {
         return ad
     }
 
-    /** Call when the user closes a scan result. Shows an interstitial only when it is due. */
-    fun onScanResultClosed(activity: Activity) {
+    /** Call when the user closes a scan result. Interstitial every 3rd scan. */
+    fun onScanResultClosed(activity: Activity) =
+        countAndMaybeShow(activity, KEY_SCAN_COUNTER, SCANS_PER_AD)
+
+    /** Call when the user leaves a generated QR. Interstitial every 2nd one. */
+    fun onQrGenerated(activity: Activity) =
+        countAndMaybeShow(activity, KEY_GEN_COUNTER, GENS_PER_AD)
+
+    private fun countAndMaybeShow(activity: Activity, key: String, perAd: Int) {
         val app = activity.applicationContext
         val p = prefs(app)
-        val count = p.getInt(KEY_SCAN_COUNTER, 0) + 1
-        p.edit().putInt(KEY_SCAN_COUNTER, count).apply()
+        val count = p.getInt(key, 0) + 1
+        p.edit().putInt(key, count).apply()
 
-        if (!adsInitialized.get() || count < SCANS_PER_AD) return
+        if (!adsInitialized.get() || count < perAd) return
 
         val ad = freshInterstitial()
         if (ad == null) {
@@ -215,14 +224,13 @@ object AdManager {
             return
         }
         val now = System.currentTimeMillis()
-        if (within(p.getLong(KEY_LAST_ANY_AD, 0L), now, AD_GAP_MS)) return
-        if (within(p.getLong(KEY_LAST_APP_OPEN, 0L), now, APP_OPEN_VS_SCAN_GAP_MS)) return
         if (activity.isFinishing || adShowing) return
 
         ad.fullScreenContentCallback = object : FullScreenContentCallback() {
             override fun onAdShowedFullScreenContent() {
                 p.edit()
                     .putInt(KEY_SCAN_COUNTER, 0)
+                    .putInt(KEY_GEN_COUNTER, 0)
                     .putLong(KEY_LAST_ANY_AD, System.currentTimeMillis())
                     .apply()
             }

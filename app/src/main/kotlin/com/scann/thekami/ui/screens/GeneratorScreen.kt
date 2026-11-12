@@ -95,8 +95,12 @@ fun GeneratorScreen() {
         }
     }
 
+    val adCtx = androidx.compose.ui.platform.LocalContext.current
     val currentBitmap = generatedBitmap
     if (currentBitmap != null) {
+        androidx.compose.runtime.LaunchedEffect(currentBitmap) {
+            (adCtx as? android.app.Activity)?.let { com.scann.thekami.util.AdManager.onQrGenerated(it) }
+        }
         QrResultScreen(
             qrBitmap = currentBitmap,
             onBack = { generatedBitmap = null }
